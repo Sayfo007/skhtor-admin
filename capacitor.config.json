@@ -1,0 +1,17 @@
+{
+  "appId": "com.skhtor.admin",
+  "appName": "Skhtor Admin",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
+  }
+}
