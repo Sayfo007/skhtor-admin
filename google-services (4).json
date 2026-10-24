@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "448107128015",
+    "project_id": "skhtor-904cc",
+    "storage_bucket": "skhtor-904cc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:448107128015:android:c24acf4d6808ba4f3a43ba",
+        "android_client_info": {
+          "package_name": "com.skhtor.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZgJXMeXE9IFOj1IYUdIyPSaa5OXjjRhw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:448107128015:android:09562f25957f09e23a43ba",
+        "android_client_info": {
+          "package_name": "com.skhtor.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZgJXMeXE9IFOj1IYUdIyPSaa5OXjjRhw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
