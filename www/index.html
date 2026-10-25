@@ -114,7 +114,7 @@ async function initPush(){
   if(!pushWired){pushWired=true;
    p.addListener("registration",tk=>{LS.s("ad_tok",tk.value);db.doc("adminTokens/"+tk.value).set({ts:Date.now()}).catch(()=>{});});
    p.addListener("registrationError",()=>toast("Push registration failed"));
-   p.addListener("pushNotificationReceived",()=>{beep();});
+   p.addListener("pushNotificationReceived",()=>{alarm();});
    try{await p.createChannel({id:"orders",name:"New orders",description:"New order alerts",importance:5,visibility:1,vibration:true});}catch(e){}
   }
   let r=await p.checkPermissions();
@@ -123,8 +123,37 @@ async function initPush(){
  }catch(e){}
 }
 async function keepAwake(){try{if("wakeLock" in navigator)wl=await navigator.wakeLock.request("screen");}catch(e){}}
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&authed)keepAwake();});
-setInterval(()=>{if(authed&&orders.some(o=>o.status==="New"))beep();},8000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&authed){keepAwake();beat();chkBatt();}});
+setInterval(()=>{if(!authed)return;orders.some(o=>o.status==="New")?alarm():stopAlarm();},12000);setInterval(beat,30000);
+
+/* ---- keep-alive, alarm, reminders, share ---- */
+const KA=()=>window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.KeepAlive;
+let batt=true;
+function alarm(){const k=KA();if(k)k.ring().catch(beep);else beep();}
+function stopAlarm(){const k=KA();if(k)k.stopRing().catch(()=>{});}
+function beat(){if(authed&&pres.open)db.doc("config/presence").set({hb:Date.now()},{merge:true}).catch(()=>{});}
+async function chkBatt(){const k=KA();if(!k||!authed)return;try{const r=await k.batteryStatus();if(r.ignoring!==batt){batt=r.ignoring;if(atab==="orders")draw();}}catch(e){}}
+async function initKA(){const k=KA();if(!k)return;try{await k.createChannel();await k.start();await chkBatt();if(!batt&&!LS.g("ad_bq")){LS.s("ad_bq",1);k.requestBattery();}}catch(e){}}
+function battH(){return KA()&&!batt?`<div class="tbox" style="border:2px solid #dc2626"><b>⚠ Battery optimization is ON</b><div class="note">Android may close this app and you will miss orders.</div><button class="pri" style="margin-top:8px" onclick="KA().requestBattery()">Disable it now</button></div>`:"";}
+async function schedRemind(){
+ const p=LNP();if(!p)return;
+ try{
+  await p.cancel({notifications:[...Array(8)].map((_,i)=>({id:9100+i}))});
+  if(!hrs||!hrs.enabled)return;
+  const n=[],now=new Date();
+  for(let i=0;i<8;i++){const d=new Date();d.setDate(d.getDate()+i);const x=hrs.days[d.getDay()];if(!x||!x.on||!/^\d\d:\d\d$/.test(x.o))continue;const t=x.o.split(":");d.setHours(+t[0],+t[1]-30,0,0);if(d<=now)continue;n.push({id:9100+i,title:"⏰ Opening in 30 minutes",body:"Open the Skhtor Admin app and go Online to start receiving orders.",schedule:{at:d,allowWhileIdle:true}});}
+  if(n.length)await p.schedule({notifications:n});
+ }catch(e){}
+}
+async function sharePin(id){
+ const o=orders.find(x=>x.id===id);if(!o||!o.pin)return;
+ const la=+o.pin.lat,lo=+o.pin.lon;if(!isFinite(la)||!isFinite(lo))return;
+ const t=`🛵 ${o.no} · ${o.name||""} ${o.phone||""}\n📍 ${o.addr||""}\nhttps://www.google.com/maps?q=${la},${lo}\nYandex: https://yandex.com/maps/?pt=${lo},${la}&z=17&l=map`;
+ try{const S=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.Share;
+  if(S)await S.share({title:"Delivery location",text:t,dialogTitle:"Share location"});
+  else if(navigator.share)await navigator.share({title:"Delivery location",text:t});
+  else{await navigator.clipboard.writeText(t);toast("✓ Location copied");}}catch(e){}
+}
 
 /* ---- login (remember me) ---- */
 function loginView(){
@@ -142,7 +171,7 @@ function forgotPw(){
 }
 function askOut(){
  const m=document.createElement("div");m.className="ov show";m.id="mo";
- m.innerHTML=`<div class="sheet"><h2>Sign out?</h2><p>Are you sure you want to sign out? You will stop receiving new orders on this device until you sign in again.</p><p class="note">The shop stays <b>${pres.open?"Online":"Offline"}</b> for customers. Use the ${pres.open?"green":"red"} button to change that.</p><div class="st"><button class="ghost" style="flex:1;width:auto" onclick="$('mo').remove()">Cancel</button><button class="pri" style="flex:1;width:auto" onclick="doOut()">Sign out</button></div></div>`;
+ m.innerHTML=`<div class="sheet"><h2>Sign out?</h2><p>Are you sure you want to sign out? You will stop receiving new orders on this device until you sign in again.</p><p class="note">Customers will see the shop as <b>closed</b> within 2 minutes after you sign out or the app stops running.</p><div class="st"><button class="ghost" style="flex:1;width:auto" onclick="$('mo').remove()">Cancel</button><button class="pri" style="flex:1;width:auto" onclick="doOut()">Sign out</button></div></div>`;
  document.body.appendChild(m);
 }
 async function doOut(){const m=$("mo");m&&m.remove();const tk=LS.g("ad_tok");try{if(tk)await db.doc("adminTokens/"+tk).delete();}catch(e){}firebase.auth().signOut();}
@@ -151,16 +180,16 @@ async function doOut(){const m=$("mo");m&&m.remove();const tk=LS.g("ad_tok");try
 function listen(){
  if(unsub)return;
  unsub=db.collection("orders").orderBy("ts","desc").limit(300).onSnapshot(s=>{
-  if(!first)s.docChanges().forEach(c=>{if(c.type==="added"){const o=c.doc.data();beep();toast("🔔 New order "+o.no);notify("New order "+o.no,(o.name||"")+" · "+fmt(o.total||0));}});
-  first=false;orders=s.docs.map(d=>({id:d.id,...d.data()}));if(atab==="orders"||atab==="hist")draw();
+  if(!first)s.docChanges().forEach(c=>{if(c.type==="added"){const o=c.doc.data();alarm();toast("🔔 New order "+o.no);notify("New order "+o.no,(o.name||"")+" · "+fmt(o.total||0));}});
+  first=false;orders=s.docs.map(d=>({id:d.id,...d.data()}));if(!orders.some(o=>o.status==="New"))stopAlarm();if(atab==="orders"||atab==="hist")draw();
  },err=>{unsub=null;toast("Orders error: "+(err.code||err.message));});
  db.doc("menu/main").onSnapshot(s=>{if(s.exists&&s.data().items)items=s.data().items;},()=>{});
- db.doc("config/presence").onSnapshot(s=>{pres=s.exists?s.data():{};if(atab==="orders"||atab==="hist")draw();else{const b=document.querySelector(".top .ib");if(b){b.style.background=pres.open?"#16a34a":"#dc2626";b.textContent=pres.open?"● Online":"○ Offline";}}},()=>{});
- db.doc("config/hours").onSnapshot(s=>{hrs=s.exists?s.data():null;},()=>{});
+ db.doc("config/presence").onSnapshot(s=>{const w=pres.open;pres=s.exists?s.data():{};if(w===pres.open)return;if(atab==="orders"||atab==="hist")draw();else{const b=document.querySelector(".top .ib");if(b){b.style.background=pres.open?"#16a34a":"#dc2626";b.textContent=pres.open?"● Online":"○ Offline";}}},()=>{});
+ db.doc("config/hours").onSnapshot(s=>{hrs=s.exists?s.data():null;schedRemind();},()=>{});
  db.doc("config/news").onSnapshot(s=>{news=s.exists?s.data():null;},()=>{});
 }
 function tabGo(x){atab=x;if(x==="menu")draft=JSON.parse(JSON.stringify(items));if(x==="hours")hd=JSON.parse(JSON.stringify(hrs||defHrs()));draw();}
-async function setOpen(){try{await db.doc("config/presence").set({open:!pres.open,ts:Date.now()});}catch(e){toast("Could not save: "+(e.code||""));}}
+async function setOpen(){try{await db.doc("config/presence").set({open:!pres.open,ts:Date.now(),hb:Date.now()});}catch(e){toast("Could not save: "+(e.code||""));}}
 const upO=(id,d)=>db.doc("orders/"+id).update(d).catch(e=>toast("Could not update: "+(e.code||"")));
 function setSt(id,st){upO(id,{status:st});}
 function setEta(id,m){const e=document.querySelector('[data-k="eta_'+id+'"]');if(e){e.value=m;form["eta_"+id]=String(m);}}
@@ -202,6 +231,7 @@ function card(o){
  let h=`<div class="oc ${esc(o.status)}"><b>${esc(o.no)}</b> · ${esc(o.mode)} · ${new Date(o.ts).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})} <b style="float:inline-end">${fmt(o.total)}</b>
  <div class="note">${esc(SL[o.status]||o.status)}${o.etaMin?" · ETA "+o.etaMin+" min":""}${o.confirmTime?" · ⏰ "+esc(o.confirmTime):""}${o.reason?" · "+esc(o.reason):""}</div>
  <pre>${esc((o.lines||[]).join("\n"))}</pre><div>${o.acct==="verified"?"✅ Verified account":o.acct==="phone"?"📱 Signed in with phone (not verified)":o.acct==="guest"?"👤 Guest":""}${o.acct?"<br>":""}${esc(o.name)} · <a href="tel:${esc(o.phone)}">${esc(o.phone)}</a>${digits?` · <a target="_blank" rel="noopener" href="https://wa.me/${digits}">WhatsApp</a>`:""}${o.addr?"<br>📍 "+esc(o.addr)+(o.atype?" ("+esc(o.atype)+")":"")+(o.floor?` · Floor ${esc(o.floor)}, Apt ${esc(o.apt)}`:"")+(o.code?` · 🔑 ${esc(o.code)}`:"")+Y(o.pin):""}${o.note?"<br>📝 "+esc(o.note):""}${!dl?`<br>🕐 Customer time: <b>${esc(o.when||"ASAP")}</b>`:""}</div>`;
+ if(dl&&o.pin&&isFinite(o.pin.lat)&&isFinite(o.pin.lon))h+=`<button class="ghost" style="margin-top:8px;width:100%" onclick="sharePin('${o.id}')">📤 Share location pin</button>`;
  if(o.status==="New")h+=acceptPanel(o);
  else if(act){
   h+=`<div class="st" style="margin-top:8px">${flow.map(s=>`<button style="${o.status===s?"background:var(--brand);color:var(--on)":""}" onclick="setSt('${o.id}','${s}')">${esc(SL[s])}</button>`).join("")}</div>`;
@@ -211,7 +241,7 @@ function card(o){
 }
 function ordersH(h){
  const L=orders.filter(o=>h?(o.status==="Done"||o.status==="Declined"):(o.status!=="Done"&&o.status!=="Declined"));
- return (h?"":stats())+(pres.open||h?"":`<p class="note">⚠ You are Offline — customers cannot order. Tap the red button above.</p>`)+(L.length?L.map(card).join(""):`<p class="note">${h?"No past orders yet.":"No active orders. New orders appear here live."}</p>`);
+ return (h?"":stats()+battH())+(pres.open||h?"":`<p class="note">⚠ You are Offline — customers cannot order. Tap the red button above.</p>`)+(L.length?L.map(card).join(""):`<p class="note">${h?"No past orders yet.":"No active orders. New orders appear here live."}</p>`);
 }
 function menuH(){
  return draft.map((i,k)=>`<div class="mi">${i.img?`<img src="${esc(i.img)}" alt="">`:`<div class="ph"></div>`}<div><div class="g"><input value="${esc(i.n)}" oninput="ed(${k},'n',this.value)" placeholder="Name"><input type="number" value="${i.p}" oninput="ed(${k},'p',+this.value)" placeholder="AMD"></div><input value="${esc(i.d||"")}" oninput="ed(${k},'d',this.value)" placeholder="Description"></div>
@@ -232,7 +262,7 @@ async function saveNews(){try{await db.doc("config/news").set({text:$("nw").valu
 
 firebase.initializeApp(FBC);db=firebase.firestore();try{db.settings({experimentalAutoDetectLongPolling:true,merge:true});}catch(e){}
 firebase.auth().onAuthStateChanged(u=>{
- if(u&&u.email){authed=true;listen();draw();keepAwake();initPush();}
- else{authed=false;if(unsub){unsub();unsub=null;}first=true;orders=[];loginView();}
+ if(u&&u.email){authed=true;listen();draw();keepAwake();initPush();initKA();beat();}
+ else{authed=false;try{KA().stop();}catch(e){}stopAlarm();if(unsub){unsub();unsub=null;}first=true;orders=[];loginView();}
 });
 </script></body></html>
