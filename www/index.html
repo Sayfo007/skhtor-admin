@@ -98,7 +98,7 @@ let DEF=[];R.forEach((l,c)=>l.forEach((x,i)=>DEF.push({id:"i"+c+"_"+i,c,n:x[0],d
 let db,items=DEF,draft=[],orders=[],pres={},hrs=null,hd=null,news=null,atab="orders",first=true,unsub=null,authed=false,form={},ac=null,wl=null;
 const SL={New:"New",Accepted:"Accepted",Preparing:"Preparing",Ready:"Ready",OnTheWay:"On the way",Done:"Done",Declined:"Declined",Cancelled:"Cancelled"};
 const SHOPNAME="Davtashen 4th block 39/3";
-let CATS=C.map(c=>({n:c[0],hy:c[1],ru:c[2],ar:c[3]})),cdraft=[],shop={lat:40.222137,lon:44.503449,set:true},defEta=45,hf={d:"",q:""},rdc=LS.g("rdc")||{},popQ=[],popOn=null,pmap=null,eoList=[];
+let CATS=C.map(c=>({n:c[0],hy:c[1],ru:c[2],ar:c[3]})),cdraft=[],shop={lat:40.222137,lon:44.503449,set:true},defEta=45,hf={d:"",q:""},rdc=LS.g("rdc")||{},popQ=[],popOn=null,pmap=null,eoList=[],eoRows=[],eoExtra=0;
 const FIN=s=>s==="Done"||s==="Declined"||s==="Cancelled";
 const pinOK=p=>!!p&&p.lat!=null&&p.lon!=null&&isFinite(p.lat)&&isFinite(p.lon);
 function km(a,b){const R=6371,r=x=>x*Math.PI/180,dA=r(b.lat-a.lat),dO=r(b.lon-a.lon),h=Math.sin(dA/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dO/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
@@ -317,17 +317,27 @@ function editOrder(id){
  <div class="note">Name</div><input id="eo_n" value="${esc(o.name||"")}">
  <div class="note">Phone</div><input id="eo_p" value="${esc(o.phone||"")}" inputmode="tel">
  ${o.mode==="Delivery"?`<div class="note">Address</div><input id="eo_a" value="${esc(o.addr||"")}">`:""}
- <div class="note">Items (one per line)</div><textarea id="eo_l" rows="6">${esc((o.lines||[]).join("\n"))}</textarea>
+ <div class="note">Items</div><div id="eo_r"></div>
  <div class="row" style="border:0"><select id="eo_s" style="flex:1">${eoList.map((i,k)=>`<option value="${k}">${esc(i.n)} — ${fmt(i.p)}</option>`).join("")}</select><button class="ghost" style="flex:none" onclick="eoAdd()">＋ Add</button></div>
- <div class="note">Total (֏)</div><input id="eo_t" type="number" inputmode="numeric" value="${+o.total||0}">
+ <div class="note" id="eo_x"></div><div class="note">Total (֏) — updates automatically, you can still type over it</div><input id="eo_t" type="number" inputmode="numeric" value="${+o.total||0}">
  <div class="note">Customer note</div><input id="eo_c" value="${esc(o.note||"")}">
  <label class="row" style="border:0"><input type="checkbox" id="eo_nf" style="width:auto" checked><span class="n">Notify customer about the change</span></label>
  <button class="pri" onclick="saveEdit('${id}')">Save changes</button></div>`;
  document.body.appendChild(m);
+ eoRows=(o.lines||[]).map(l=>{const r=/^\s*(\d+)\s*[×x]\s*(.+?)\s*[–—-]\s*([\d,\s]+)\s*֏?\s*$/.exec(l);if(!r)return{raw:l};const q=Math.max(1,+r[1]),tot=+r[3].replace(/[^\d]/g,"");return{q,n:r[2],u:tot/q};});
+ const sum=eoRows.reduce((a,r)=>a+(r.raw?0:r.u*r.q),0);eoExtra=Math.max(0,(+o.total||0)-sum);if(eoRows.every(r=>r.raw))eoExtra=0;
+ eoDraw(false);
 }
-function eoAdd(){const i=eoList[+$("eo_s").value];if(!i)return;const l=$("eo_l");l.value=(l.value.trim()?l.value.trim()+"\n":"")+"1× "+i.n;$("eo_t").value=(+$("eo_t").value||0)+(+i.p||0);}
+function eoDraw(recalc=true){
+ $("eo_r").innerHTML=eoRows.map((r,k)=>r.raw?`<div class="row" style="border:0;gap:6px"><span class="n" style="flex:1">${esc(r.raw)}</span><button class="ghost" style="flex:none" onclick="eoDel(${k})" aria-label="Delete item">🗑</button></div>`:`<div class="row" style="border:0;gap:6px"><span class="n" style="flex:1">${esc(r.n)}<br><span class="note">${fmt(r.u*r.q)}</span></span><button class="ghost" style="flex:none" onclick="eoQty(${k},-1)">−</button><b style="min-width:22px;text-align:center">${r.q}</b><button class="ghost" style="flex:none" onclick="eoQty(${k},1)">＋</button><button class="ghost" style="flex:none" onclick="eoDel(${k})" aria-label="Delete item">🗑</button></div>`).join("")||'<p class="note">No items — add one below.</p>';
+ $("eo_x").textContent=eoExtra?"Includes "+fmt(eoExtra)+" other charges (delivery / service) kept from the original total.":"";
+ if(recalc)$("eo_t").value=eoRows.reduce((a,r)=>a+(r.raw?0:r.u*r.q),0)+eoExtra;
+}
+function eoQty(k,d){const r=eoRows[k];if(!r)return;r.q+=d;if(r.q<1){eoDel(k);return;}eoDraw();}
+function eoDel(k){eoRows.splice(k,1);eoDraw();}
+function eoAdd(){const i=eoList[+$("eo_s").value];if(!i)return;const r=eoRows.find(x=>!x.raw&&x.n===i.n&&x.u===(+i.p||0));if(r)r.q++;else eoRows.push({q:1,n:i.n,u:+i.p||0});eoDraw();}
 function saveEdit(id){
- const lines=$("eo_l").value.split("\n").map(x=>x.trim()).filter(Boolean),tot=+$("eo_t").value;
+ const lines=eoRows.map(r=>r.raw?r.raw:r.q+" × "+r.n+" – "+fmt(r.u*r.q)),tot=+$("eo_t").value;
  if(!lines.length){toast("Add at least one item");return;}
  if(!isFinite(tot)||tot<0){toast("Enter a valid total");return;}
  const d={lines,total:tot,name:$("eo_n").value.trim(),phone:$("eo_p").value.trim(),note:$("eo_c").value.trim(),edited:true,editedAt:Date.now()};
