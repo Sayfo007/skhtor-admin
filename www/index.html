@@ -1,5 +1,6 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Skhtor Admin</title><meta name="robots" content="noindex">
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;600;800&family=Noto+Sans+Armenian:wght@400;700&family=Noto+Sans+Arabic:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 :root{--bg:#f1f2ee;--card:#fff;--ink:#1b2125;--mute:#69717a;--brand:#f2b90f;--on:#1b2125;--dark:#161b1e;--line:#e0e2dc;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1315;--card:#1a2124;--ink:#f1efe6;--mute:#9aa3aa;--line:#2a343a}}
@@ -71,8 +72,9 @@ input,textarea,select{width:100%;padding:13px;border:1px solid var(--line);borde
 .chips button.sel{background:var(--brand);color:var(--on);font-weight:800}
 .oc.Accepted{border-color:#a855f7}.oc.OnTheWay{border-color:#06b6d4}.oc.Declined{border-color:#ef4444;opacity:.6}
 @media (prefers-reduced-motion:reduce){.spin,.pulse2,.bar button.pulse{animation:none}}
+.oc.Cancelled{border-color:#ef4444;opacity:.6}.leaflet-container{font:inherit}#pmap{z-index:0}
 </style></head><body style="padding-bottom:0"><div id="app"></div>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script><script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script>const FBC={apiKey:"AIzaSyA-_Q8X7jWa3psD6S-z9uyNIeZexnDfYto",authDomain:"skhtor-904cc.firebaseapp.com",projectId:"skhtor-904cc",storageBucket:"skhtor-904cc.firebasestorage.app",messagingSenderId:"448107128015",appId:"1:448107128015:web:a1323941c42335c03a43ba"};
 const LN={en:"English",hy:"Հայերեն",ru:"Русский",ar:"العربية"};
 const T={
@@ -94,7 +96,18 @@ const LS={g(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return nu
 const LN2={hy:"Հայերեն",ru:"Русский",ar:"العربية"};
 let DEF=[];R.forEach((l,c)=>l.forEach((x,i)=>DEF.push({id:"i"+c+"_"+i,c,n:x[0],d:x[1],p:x[2]})));
 let db,items=DEF,draft=[],orders=[],pres={},hrs=null,hd=null,news=null,atab="orders",first=true,unsub=null,authed=false,form={},ac=null,wl=null;
-const SL={New:"New",Accepted:"Accepted",Preparing:"Preparing",Ready:"Ready",OnTheWay:"On the way",Done:"Done",Declined:"Declined"};
+const SL={New:"New",Accepted:"Accepted",Preparing:"Preparing",Ready:"Ready",OnTheWay:"On the way",Done:"Done",Declined:"Declined",Cancelled:"Cancelled"};
+const SHOPNAME="Davtashen 4th block 39/3";
+let CATS=C.map(c=>({n:c[0],hy:c[1],ru:c[2],ar:c[3]})),cdraft=[],shop={lat:40.21583,lon:44.48111,set:false},popQ=[],popOn=null,pmap=null,eoList=[];
+const FIN=s=>s==="Done"||s==="Declined"||s==="Cancelled";
+const pinOK=p=>!!p&&p.lat!=null&&p.lon!=null&&isFinite(p.lat)&&isFinite(p.lon);
+function km(a,b){const R=6371,r=x=>x*Math.PI/180,dA=r(b.lat-a.lat),dO=r(b.lon-a.lon),h=Math.sin(dA/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dO/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
+const dist=o=>pinOK(o.pin)?km(shop,{lat:+o.pin.lat,lon:+o.pin.lon}):null;
+const QM={
+ en:["We're running a few minutes late — sorry!","Our courier is outside, please come out.","Please call us when you can.","Your order is ready — thank you!"],
+ hy:["Մի քանի րոպե ուշանում ենք, ներեցեք։","Մեր առաքիչը դռան մոտ է։","Խնդրում ենք զանգահարել մեզ։","Ձեր պատվերը պատրաստ է՝ շնորհակալություն։"],
+ ru:["Задерживаемся на несколько минут, извините!","Курьер у вашей двери.","Пожалуйста, позвоните нам.","Ваш заказ готов — спасибо!"],
+ ar:["نعتذر، سنتأخر بضع دقائق.","السائق عند بابك.","يرجى الاتصال بنا.","طلبك جاهز — شكراً لك!"]};
 const defHrs=()=>({enabled:false,days:Array.from({length:7},()=>({on:true,o:"10:00",c:"23:00"}))});
 const val=k=>{const e=document.querySelector('[data-k="'+k+'"]');return e?e.value:"";};
 function toast(m){const e=document.createElement("div");e.className="toast";e.textContent=m;document.body.appendChild(e);setTimeout(()=>e.remove(),2600);}
@@ -180,15 +193,16 @@ async function doOut(){const m=$("mo");m&&m.remove();const tk=LS.g("ad_tok");try
 function listen(){
  if(unsub)return;
  unsub=db.collection("orders").orderBy("ts","desc").limit(300).onSnapshot(s=>{
-  if(!first)s.docChanges().forEach(c=>{if(c.type==="added"){const o=c.doc.data();alarm();toast("🔔 New order "+o.no);notify("New order "+o.no,(o.name||"")+" · "+fmt(o.total||0));}});
-  first=false;orders=s.docs.map(d=>({id:d.id,...d.data()}));if(!orders.some(o=>o.status==="New"))stopAlarm();if(atab==="orders"||atab==="hist")draw();
+  const added=[];if(!first)s.docChanges().forEach(c=>{if(c.type==="added"){const o=c.doc.data();added.push(c.doc.id);alarm();toast("🔔 New order "+o.no);notify("New order "+o.no,(o.name||"")+" · "+fmt(o.total||0));}});
+  first=false;orders=s.docs.map(d=>({id:d.id,...d.data()}));if(!orders.some(o=>o.status==="New"))stopAlarm();if(atab==="orders"||atab==="hist")draw();added.forEach(queuePop);
  },err=>{unsub=null;toast("Orders error: "+(err.code||err.message));});
- db.doc("menu/main").onSnapshot(s=>{if(s.exists&&s.data().items)items=s.data().items;},()=>{});
+ db.doc("menu/main").onSnapshot(s=>{if(!s.exists)return;const d=s.data();if(d.items)items=d.items;if(d.cats&&d.cats.length)CATS=d.cats;},()=>{});
+ db.doc("config/shop").onSnapshot(s=>{if(s.exists&&pinOK(s.data()))shop={lat:+s.data().lat,lon:+s.data().lon,set:true};},()=>{});
  db.doc("config/presence").onSnapshot(s=>{const w=pres.open;pres=s.exists?s.data():{};if(w===pres.open)return;if(atab==="orders"||atab==="hist")draw();else{const b=document.querySelector(".top .ib");if(b){b.style.background=pres.open?"#16a34a":"#dc2626";b.textContent=pres.open?"● Online":"○ Offline";}}},()=>{});
  db.doc("config/hours").onSnapshot(s=>{hrs=s.exists?s.data():null;schedRemind();},()=>{});
  db.doc("config/news").onSnapshot(s=>{news=s.exists?s.data():null;},()=>{});
 }
-function tabGo(x){atab=x;if(x==="menu")draft=JSON.parse(JSON.stringify(items));if(x==="hours")hd=JSON.parse(JSON.stringify(hrs||defHrs()));draw();}
+function tabGo(x){atab=x;if(x==="menu"){draft=JSON.parse(JSON.stringify(items));cdraft=JSON.parse(JSON.stringify(CATS));}if(x==="hours")hd=JSON.parse(JSON.stringify(hrs||defHrs()));draw();}
 async function setOpen(){try{await db.doc("config/presence").set({open:!pres.open,ts:Date.now(),hb:Date.now()});}catch(e){toast("Could not save: "+(e.code||""));}}
 const upO=(id,d)=>db.doc("orders/"+id).update(d).catch(e=>toast("Could not update: "+(e.code||"")));
 function setSt(id,st){upO(id,{status:st});}
@@ -203,6 +217,108 @@ function accept(id){
 function decline(id){upO(id,{status:"Declined",reason:val("rs_"+id).trim(),acceptedTs:Date.now()});}
 function updEta(id){const m=parseInt(val("eta_"+id),10);if(!m){toast("Enter minutes");return;}upO(id,{etaMin:m,acceptedTs:Date.now()});toast("✓ ETA updated");}
 
+/* ---- new-order map popup, distance ---- */
+function queuePop(id){popQ.push(id);if(!popOn)nextPop();}
+function nextPop(){const id=popQ.shift();if(!id){popOn=null;return;}popOn=id;showPop(id);}
+function killMap(){if(pmap){try{pmap.remove();}catch(e){}pmap=null;}const m=$("pop");m&&m.remove();}
+function closePop(){killMap();popOn=null;if(popQ.length)setTimeout(nextPop,250);}
+function openFromPop(){closePop();tabGo("orders");window.scrollTo(0,0);}
+function showPop(id){
+ const o=orders.find(x=>x.id===id);if(!o){closePop();return;}
+ killMap();
+ const has=pinOK(o.pin),k=has?dist(o):null,m=document.createElement("div");
+ m.className="ov show";m.id="pop";m.style.alignItems="center";m.style.padding="14px";
+ m.innerHTML=`<div class="sheet" style="border-radius:22px;max-width:520px;padding:16px"><button class="x" onclick="closePop()" aria-label="Close">×</button><h2 style="font-size:20px;margin:0 0 4px">🔔 ${esc(o.no)} · ${esc(o.mode)}</h2><div class="note">${esc(o.name||"")} · ${fmt(o.total||0)}</div>
+ ${has?`<div id="pmap" style="height:min(300px,38vh);border-radius:16px;margin:10px 0;background:var(--card)"></div><div style="font-size:18px;font-weight:800">📏 ${k.toFixed(1)} km <span class="note" style="font-weight:400">straight line from ${SHOPNAME}</span></div><div class="note" id="proad">Calculating road distance…</div>`:`<div class="tbox note">${o.mode==="Delivery"?"No map pin on this order — see the address below.":"No delivery for this order type."}</div>`}
+ ${o.addr?`<div style="margin-top:6px">📍 ${esc(o.addr)}</div>`:""}
+ <pre style="max-height:90px;overflow:auto">${esc((o.lines||[]).join("\n"))}</pre>
+ <div class="st" style="margin-top:8px"><button class="pri" style="flex:2;width:auto" onclick="openFromPop()">Open order</button><button class="ghost" style="flex:1" onclick="closePop()">Close</button></div></div>`;
+ document.body.appendChild(m);
+ if(has){setTimeout(()=>drawMap(o,k),60);roadDist(o);}
+}
+function drawMap(o,k){
+ const el=$("pmap");if(!el)return;
+ if(!window.L){el.innerHTML='<div class="note" style="padding:16px">Map needs internet. Distance: '+k.toFixed(1)+' km</div>';return;}
+ try{
+  const c=[+o.pin.lat,+o.pin.lon],s=[shop.lat,shop.lon];
+  pmap=L.map(el,{attributionControl:true});
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(pmap);
+  const ic=e=>L.divIcon({html:'<div style="font-size:28px;line-height:28px;transform:translate(-50%,-100%)">'+e+'</div>',className:"",iconSize:[0,0]});
+  L.polyline([s,c],{color:"#f2b90f",weight:4,dashArray:"8 8"}).addTo(pmap);
+  L.marker(s,{icon:ic("🏠")}).addTo(pmap);
+  L.marker(c,{icon:ic("📍")}).addTo(pmap);
+  const fit=()=>{try{pmap.invalidateSize();pmap.fitBounds([s,c],{padding:[36,36],maxZoom:16});}catch(e){}};
+  fit();setTimeout(fit,250);
+ }catch(e){el.innerHTML='<div class="note" style="padding:16px">Map could not load. Distance: '+k.toFixed(1)+' km</div>';}
+}
+async function roadDist(o){
+ try{
+  const ct=new AbortController();setTimeout(()=>ct.abort(),6000);
+  const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${shop.lon},${shop.lat};${+o.pin.lon},${+o.pin.lat}?overview=false`,{signal:ct.signal});
+  const j=await r.json(),x=j.routes&&j.routes[0];if(!x)throw 0;
+  const e=$("proad");if(e)e.innerHTML="🛣 ≈ <b>"+(x.distance/1000).toFixed(1)+" km</b> by road · ~"+Math.max(1,Math.round(x.duration/60))+" min drive";
+ }catch(e){const q=$("proad");if(q)q.textContent="Road distance unavailable";}
+}
+function shopH(){return `<h2 style="font-size:18px">📍 Shop location</h2><p class="note">${SHOPNAME}${shop.set?"":" — currently using approximate coordinates. Stand in the shop and tap “Use my current location”, then Save."} Used for the distance shown on new orders.</p><div class="row" style="border:0"><input id="sl" type="number" step="any" value="${shop.lat}" placeholder="Latitude"><input id="so" type="number" step="any" value="${shop.lon}" placeholder="Longitude"></div><div class="st"><button class="ghost" style="flex:1" onclick="useHere()">📡 Use my current location</button><button class="pri" style="flex:1;width:auto" onclick="saveShop()">Save location</button></div>`;}
+function useHere(){if(!navigator.geolocation){toast("Location not available");return;}navigator.geolocation.getCurrentPosition(p=>{$("sl").value=p.coords.latitude.toFixed(6);$("so").value=p.coords.longitude.toFixed(6);toast("Got your position — tap Save");},()=>toast("Could not get location"),{enableHighAccuracy:true,timeout:15000});}
+async function saveShop(){const la=+$("sl").value,lo=+$("so").value;if(!isFinite(la)||!isFinite(lo)||Math.abs(la)>90||Math.abs(lo)>180){toast("Invalid coordinates");return;}try{await db.doc("config/shop").set({lat:la,lon:lo,name:SHOPNAME,ts:Date.now()});toast("✓ Saved");}catch(e){toast("Could not save: "+(e.code||""));}}
+
+/* ---- edit / cancel / message ---- */
+function actRow(o){return `<div class="st" style="margin-top:8px"><button class="ghost" style="flex:1" onclick="editOrder('${o.id}')">✏️ Edit order</button>${o.status==="New"?"":`<button class="ghost" style="flex:1;color:#dc2626" onclick="askCancel('${o.id}')">🚫 Cancel order</button>`}</div>`;}
+function msgHist(o){const m=o.msgs||[];return m.length?`<div class="note" style="margin-top:8px">${m.slice(-4).map(x=>"💬 "+new Date(x.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})+" · "+esc(x.t)).join("<br>")}</div>`:"";}
+function msgPanel(o){
+ const q=QM[o.lang]||QM.en;
+ return `<div class="tbox"><b>💬 Message to customer</b>${msgHist(o)}<div class="chips">${q.map((t,i)=>`<button onclick="setMsg('${o.id}',${i})">${esc(t)}</button>`).join("")}</div><div class="row" style="border:0"><input data-k="msg_${o.id}" placeholder="Type a message…" style="flex:1"><button class="pri" style="width:auto;flex:none" onclick="sendMsg('${o.id}')">Send</button></div>${o.fcm?"":`<div class="note">⚠ No push token for this customer — they will only see it inside the app.</div>`}</div>`;
+}
+function setMsg(id,i){const o=orders.find(x=>x.id===id);if(!o)return;const t=(QM[o.lang]||QM.en)[i],e=document.querySelector('[data-k="msg_'+id+'"]');if(e)e.value=t;form["msg_"+id]=t;}
+function sendMsg(id){
+ const t=val("msg_"+id).trim();if(!t){toast("Type a message first");return;}
+ const ts=Date.now();
+ db.doc("orders/"+id).update({msgs:firebase.firestore.FieldValue.arrayUnion({t,ts,from:"shop"}),lastMsg:t,lastMsgTs:ts}).then(()=>{form["msg_"+id]="";const e=document.querySelector('[data-k="msg_'+id+'"]');if(e)e.value="";toast("✓ Message sent");}).catch(e=>toast("Could not send: "+(e.code||"")));
+}
+function askCancel(id){
+ const o=orders.find(x=>x.id===id);if(!o)return;
+ const R=["Out of stock","Customer asked to cancel","Can't deliver to this address","Kitchen is closing"],m=document.createElement("div");m.className="ov show";m.id="co";
+ m.innerHTML=`<div class="sheet"><h2>Cancel ${esc(o.no)}?</h2><p>The customer will be notified. This cannot be undone.</p><div class="chips">${R.map(r=>`<button onclick="$('cr').value=this.textContent">${esc(r)}</button>`).join("")}</div><input id="cr" placeholder="Reason (shown to customer)"><div class="st" style="margin-top:8px"><button class="ghost" style="flex:1;width:auto" onclick="$('co').remove()">Keep order</button><button class="pri" style="flex:1;width:auto;background:#dc2626;color:#fff" onclick="doCancel('${id}')">Cancel order</button></div></div>`;
+ document.body.appendChild(m);
+}
+function doCancel(id){const r=$("cr").value.trim();upO(id,{status:"Cancelled",reason:r,acceptedTs:Date.now(),cancelledTs:Date.now()});$("co").remove();toast("Order cancelled");}
+function editOrder(id){
+ const o=orders.find(x=>x.id===id);if(!o)return;
+ eoList=items.filter(i=>!i.off);
+ const m=document.createElement("div");m.className="ov show";m.id="eo";
+ m.innerHTML=`<div class="sheet"><button class="x" onclick="$('eo').remove()" aria-label="Close">×</button><h2>✏️ Edit ${esc(o.no)}</h2>
+ <div class="note">Name</div><input id="eo_n" value="${esc(o.name||"")}">
+ <div class="note">Phone</div><input id="eo_p" value="${esc(o.phone||"")}" inputmode="tel">
+ ${o.mode==="Delivery"?`<div class="note">Address</div><input id="eo_a" value="${esc(o.addr||"")}">`:""}
+ <div class="note">Items (one per line)</div><textarea id="eo_l" rows="6">${esc((o.lines||[]).join("\n"))}</textarea>
+ <div class="row" style="border:0"><select id="eo_s" style="flex:1">${eoList.map((i,k)=>`<option value="${k}">${esc(i.n)} — ${fmt(i.p)}</option>`).join("")}</select><button class="ghost" style="flex:none" onclick="eoAdd()">＋ Add</button></div>
+ <div class="note">Total (֏)</div><input id="eo_t" type="number" inputmode="numeric" value="${+o.total||0}">
+ <div class="note">Customer note</div><input id="eo_c" value="${esc(o.note||"")}">
+ <label class="row" style="border:0"><input type="checkbox" id="eo_nf" style="width:auto" checked><span class="n">Notify customer about the change</span></label>
+ <button class="pri" onclick="saveEdit('${id}')">Save changes</button></div>`;
+ document.body.appendChild(m);
+}
+function eoAdd(){const i=eoList[+$("eo_s").value];if(!i)return;const l=$("eo_l");l.value=(l.value.trim()?l.value.trim()+"\n":"")+"1× "+i.n;$("eo_t").value=(+$("eo_t").value||0)+(+i.p||0);}
+function saveEdit(id){
+ const lines=$("eo_l").value.split("\n").map(x=>x.trim()).filter(Boolean),tot=+$("eo_t").value;
+ if(!lines.length){toast("Add at least one item");return;}
+ if(!isFinite(tot)||tot<0){toast("Enter a valid total");return;}
+ const d={lines,total:tot,name:$("eo_n").value.trim(),phone:$("eo_p").value.trim(),note:$("eo_c").value.trim(),edited:true,editedAt:Date.now()};
+ if($("eo_a"))d.addr=$("eo_a").value.trim();
+ if($("eo_nf").checked)d.editTs=Date.now();
+ db.doc("orders/"+id).update(d).then(()=>{const e=$("eo");e&&e.remove();toast("✓ Order updated");}).catch(e=>toast("Could not update: "+(e.code||"")));
+}
+
+/* ---- menu sections ---- */
+function secH(){
+ return `<h2 style="font-size:18px;margin-top:6px">Sections</h2>`+cdraft.map((c,k)=>{const n=draft.filter(i=>i.c===k).length;return `<div class="mi" style="grid-template-columns:1fr"><div class="row" style="border:0;padding:0"><input value="${esc(c.n)}" oninput="cs(${k},'n',this.value)" placeholder="Section name"><button class="ghost" style="flex:none" ${k?"":"disabled"} onclick="cmove(${k},-1)" aria-label="Move up">▲</button><button class="ghost" style="flex:none" ${k<cdraft.length-1?"":"disabled"} onclick="cmove(${k},1)" aria-label="Move down">▼</button><button class="ghost" style="flex:none" onclick="cdel(${k})" aria-label="Delete section">🗑</button></div><details><summary class="note">Translations · ${n} item${n===1?"":"s"}</summary>${["hy","ru","ar"].map(l=>`<input value="${esc(c[l]||"")}" oninput="cs(${k},'${l}',this.value)" placeholder="${LN2[l]}">`).join("")}</details></div>`;}).join("")+`<div class="chips"><button onclick="cadd()">＋ Add section</button></div>`;
+}
+function cs(k,f,v){cdraft[k][f]=v;}
+function cadd(){cdraft.push({n:"New section",hy:"",ru:"",ar:""});draw();}
+function cdel(k){if(draft.some(i=>i.c===k)){toast("Move or delete this section's items first");return;}if(!confirm("Delete this section?"))return;cdraft.splice(k,1);draft.forEach(i=>{if(i.c>k)i.c--;});draw();}
+function cmove(k,d){const j=k+d;if(j<0||j>=cdraft.length)return;[cdraft[k],cdraft[j]]=[cdraft[j],cdraft[k]];draft.forEach(i=>{if(i.c===k)i.c=j;else if(i.c===j)i.c=k;});draw();}
+
 /* ---- views ---- */
 function draw(){
  if(!authed)return;
@@ -214,7 +330,7 @@ function draw(){
  if(atab==="orders"||atab==="hist")window.scrollTo(0,y);
 }
 function stats(){
- const d=new Date().toDateString(),T=orders.filter(o=>new Date(o.ts).toDateString()===d&&o.status!=="Declined");
+ const d=new Date().toDateString(),T=orders.filter(o=>new Date(o.ts).toDateString()===d&&o.status!=="Declined"&&o.status!=="Cancelled");
  return `<div class="tbox"><b>Today:</b> ${T.length} orders · ${fmt(T.reduce((s,o)=>s+(o.total||0),0))}</div>`;
 }
 function acceptPanel(o){
@@ -225,36 +341,38 @@ function acceptPanel(o){
  return p+`<input data-k="rs_${id}" placeholder="Reason if declining (optional)"><div class="st" style="margin-top:6px"><button class="pri" style="width:auto;flex:2" onclick="accept('${id}')">✅ Accept</button><button class="ghost" style="flex:1" onclick="decline('${id}')">✕ Decline</button></div></div>`;
 }
 function card(o){
- const act=o.status!=="Done"&&o.status!=="Declined",dl=o.mode==="Delivery",flow=dl?["Accepted","Preparing","Ready","OnTheWay","Done"]:["Accepted","Preparing","Ready","Done"];
+ const act=!FIN(o.status),dl=o.mode==="Delivery",flow=dl?["Accepted","Preparing","Ready","OnTheWay","Done"]:["Accepted","Preparing","Ready","Done"];
  const Y=p=>p&&isFinite(p.lon)&&isFinite(p.lat)?` · <a target="_blank" rel="noopener" href="https://yandex.com/maps/?pt=${+p.lon},${+p.lat}&z=17&l=map">Yandex Maps</a>`:"";
- const digits=String(o.phone||"").replace(/\D/g,"");
+ const digits=String(o.phone||"").replace(/\D/g,""),D=o=>{const k=dist(o);return k==null?"":"<br>📏 <b>"+k.toFixed(1)+" km</b> from "+SHOPNAME;};
  let h=`<div class="oc ${esc(o.status)}"><b>${esc(o.no)}</b> · ${esc(o.mode)} · ${new Date(o.ts).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})} <b style="float:inline-end">${fmt(o.total)}</b>
- <div class="note">${esc(SL[o.status]||o.status)}${o.etaMin?" · ETA "+o.etaMin+" min":""}${o.confirmTime?" · ⏰ "+esc(o.confirmTime):""}${o.reason?" · "+esc(o.reason):""}</div>
- <pre>${esc((o.lines||[]).join("\n"))}</pre><div>${o.acct==="verified"?"✅ Verified account":o.acct==="phone"?"📱 Signed in with phone (not verified)":o.acct==="guest"?"👤 Guest":""}${o.acct?"<br>":""}${esc(o.name)} · <a href="tel:${esc(o.phone)}">${esc(o.phone)}</a>${digits?` · <a target="_blank" rel="noopener" href="https://wa.me/${digits}">WhatsApp</a>`:""}${o.addr?"<br>📍 "+esc(o.addr)+(o.atype?" ("+esc(o.atype)+")":"")+(o.floor?` · Floor ${esc(o.floor)}, Apt ${esc(o.apt)}`:"")+(o.code?` · 🔑 ${esc(o.code)}`:"")+Y(o.pin):""}${o.note?"<br>📝 "+esc(o.note):""}${!dl?`<br>🕐 Customer time: <b>${esc(o.when||"ASAP")}</b>`:""}</div>`;
+ <div class="note">${esc(SL[o.status]||o.status)}${o.etaMin?" · ETA "+o.etaMin+" min":""}${o.confirmTime?" · ⏰ "+esc(o.confirmTime):""}${o.edited?" · ✏ edited":""}${o.reason?" · "+esc(o.reason):""}</div>
+ <pre>${esc((o.lines||[]).join("\n"))}</pre><div>${o.acct==="verified"?"✅ Verified account":o.acct==="phone"?"📱 Signed in with phone (not verified)":o.acct==="guest"?"👤 Guest":""}${o.acct?"<br>":""}${esc(o.name)} · <a href="tel:${esc(o.phone)}">${esc(o.phone)}</a>${digits?` · <a target="_blank" rel="noopener" href="https://wa.me/${digits}">WhatsApp</a>`:""}${o.addr?"<br>📍 "+esc(o.addr)+(o.atype?" ("+esc(o.atype)+")":"")+(o.floor?` · Floor ${esc(o.floor)}, Apt ${esc(o.apt)}`:"")+(o.code?` · 🔑 ${esc(o.code)}`:"")+Y(o.pin)+D(o):""}${o.note?"<br>📝 "+esc(o.note):""}${!dl?`<br>🕐 Customer time: <b>${esc(o.when||"ASAP")}</b>`:""}</div>`;
  if(dl&&o.pin&&isFinite(o.pin.lat)&&isFinite(o.pin.lon))h+=`<button class="ghost" style="margin-top:8px;width:100%" onclick="sharePin('${o.id}')">📤 Share location pin</button>`;
- if(o.status==="New")h+=acceptPanel(o);
+ if(pinOK(o.pin))h+=`<button class="ghost" style="margin-top:8px;width:100%" onclick="showPop('${o.id}')">🗺 Map &amp; distance</button>`;
+if(o.status==="New")h+=acceptPanel(o)+actRow(o);
  else if(act){
   h+=`<div class="st" style="margin-top:8px">${flow.map(s=>`<button style="${o.status===s?"background:var(--brand);color:var(--on)":""}" onclick="setSt('${o.id}','${s}')">${esc(SL[s])}</button>`).join("")}</div>`;
   if(o.mode!=="Dine")h+=`<div class="row" style="border:0;margin-top:6px"><input type="number" inputmode="numeric" data-k="eta_${o.id}" placeholder="New ETA (min)" style="flex:1"><button class="ghost" onclick="updEta('${o.id}')">Update ETA</button></div>`;
+  h+=msgPanel(o)+actRow(o);
  }
- return h+`</div>`;
+ return h+(act?"":msgHist(o))+`</div>`;
 }
 function ordersH(h){
- const L=orders.filter(o=>h?(o.status==="Done"||o.status==="Declined"):(o.status!=="Done"&&o.status!=="Declined"));
+ const L=orders.filter(o=>h?FIN(o.status):!FIN(o.status));
  return (h?"":stats()+battH())+(pres.open||h?"":`<p class="note">⚠ You are Offline — customers cannot order. Tap the red button above.</p>`)+(L.length?L.map(card).join(""):`<p class="note">${h?"No past orders yet.":"No active orders. New orders appear here live."}</p>`);
 }
 function menuH(){
- return draft.map((i,k)=>`<div class="mi">${i.img?`<img src="${esc(i.img)}" alt="">`:`<div class="ph"></div>`}<div><div class="g"><input value="${esc(i.n)}" oninput="ed(${k},'n',this.value)" placeholder="Name"><input type="number" value="${i.p}" oninput="ed(${k},'p',+this.value)" placeholder="AMD"></div><input value="${esc(i.d||"")}" oninput="ed(${k},'d',this.value)" placeholder="Description"></div>
+ return secH()+`<h2 style="font-size:18px">Items</h2>`+draft.map((i,k)=>`<div class="mi">${i.img?`<img src="${esc(i.img)}" alt="">`:`<div class="ph"></div>`}<div><div class="g"><input value="${esc(i.n)}" oninput="ed(${k},'n',this.value)" placeholder="Name"><input type="number" value="${i.p}" oninput="ed(${k},'p',+this.value)" placeholder="AMD"></div><input value="${esc(i.d||"")}" oninput="ed(${k},'d',this.value)" placeholder="Description"></div>
  <details><summary class="note">Translations</summary>${["hy","ru","ar"].map(l=>`<input value="${esc((i.tr||{})[l]||"")}" oninput="edt(${k},'${l}',this.value)" placeholder="${LN2[l]}">`).join("")}</details>
- <div class="acts"><select style="width:auto" onchange="ed(${k},'c',+this.value)">${C.map((c,ci)=>`<option value="${ci}" ${ci===i.c?"selected":""}>${c[0]}</option>`).join("")}</select><label><input type="checkbox" style="width:auto" ${i.off?"checked":""} onchange="ed(${k},'off',this.checked)"> Hidden</label><label class="ghost">📷<input type="file" accept="image/*" hidden onchange="upImg(${k},this.files[0])"></label><button class="ghost" onclick="draft.splice(${k},1);draw()">🗑</button></div></div>`).join("")+
+ <div class="acts"><select style="width:auto" onchange="ed(${k},'c',+this.value)">${cdraft.map((c,ci)=>`<option value="${ci}" ${ci===i.c?"selected":""}>${esc(c.n)}</option>`).join("")}</select><label><input type="checkbox" style="width:auto" ${i.off?"checked":""} onchange="ed(${k},'off',this.checked)"> Hidden</label><label class="ghost">📷<input type="file" accept="image/*" hidden onchange="upImg(${k},this.files[0])"></label><button class="ghost" onclick="draft.splice(${k},1);draw()">🗑</button></div></div>`).join("")+
  `<div class="chips"><button onclick="draft.push({id:'n'+Date.now(),c:0,n:'New item',d:'',p:0});draw()">＋ Add item</button></div><button class="pri" onclick="saveMenu()">Save menu</button>`;
 }
 function ed(k,f,v){draft[k][f]=v;}function edt(k,l,v){(draft[k].tr=draft[k].tr||{})[l]=v;}
 function upImg(k,f){if(!f)return;const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const c=document.createElement("canvas");c.width=c.height=200;const x=c.getContext("2d"),m=Math.min(im.width,im.height);x.drawImage(im,(im.width-m)/2,(im.height-m)/2,m,m,0,0,200,200);draft[k].img=c.toDataURL("image/jpeg",.6);draw();};im.onerror=()=>toast("Upload failed");im.src=r.result;};r.readAsDataURL(f);}
-async function saveMenu(){try{await db.doc("menu/main").set({items:draft});toast("✓ Saved");}catch(e){toast("Could not save: "+(e.code||""));}}
+async function saveMenu(){if(cdraft.some(c=>!String(c.n).trim())){toast("Every section needs a name");return;}try{await db.doc("menu/main").set({items:draft,cats:cdraft.map(c=>({n:c.n.trim(),hy:c.hy||"",ru:c.ru||"",ar:c.ar||""}))});toast("✓ Saved");}catch(e){toast("Could not save: "+(e.code||""));}}
 function hoursH(){
  const D=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
- return `<label class="row"><input type="checkbox" style="width:auto" ${hd.enabled?"checked":""} onchange="hd.enabled=this.checked"><span class="n">Use working hours (off = open whenever you are online)</span></label>`+hd.days.map((x,k)=>`<div class="row"><input type="checkbox" style="width:auto" ${x.on?"checked":""} onchange="hd.days[${k}].on=this.checked"><span class="n">${D[k]}</span><input type="time" style="width:auto" value="${esc(x.o)}" onchange="hd.days[${k}].o=this.value"><input type="time" style="width:auto" value="${esc(x.c)}" onchange="hd.days[${k}].c=this.value"></div>`).join("")+`<p class="note">Customers can only order while you are Online and inside these hours.</p><button class="pri" onclick="saveHours()">Save &amp; update users</button>`;
+ return `<label class="row"><input type="checkbox" style="width:auto" ${hd.enabled?"checked":""} onchange="hd.enabled=this.checked"><span class="n">Use working hours (off = open whenever you are online)</span></label>`+hd.days.map((x,k)=>`<div class="row"><input type="checkbox" style="width:auto" ${x.on?"checked":""} onchange="hd.days[${k}].on=this.checked"><span class="n">${D[k]}</span><input type="time" style="width:auto" value="${esc(x.o)}" onchange="hd.days[${k}].o=this.value"><input type="time" style="width:auto" value="${esc(x.c)}" onchange="hd.days[${k}].c=this.value"></div>`).join("")+`<p class="note">Customers can only order while you are Online and inside these hours.</p><button class="pri" onclick="saveHours()">Save &amp; update users</button>`+shopH();
 }
 async function saveHours(){try{await db.doc("config/hours").set(hd);toast("✓ Saved");}catch(e){toast("Could not save: "+(e.code||""));}}
 function newsH(){return `<p class="note">Message shown to all customers at the top of the menu. Leave empty to remove.</p><textarea id="nw" rows="3">${esc((news&&news.text)||"")}</textarea><button class="pri" onclick="saveNews()">Publish update</button>`;}
