@@ -98,7 +98,7 @@ let DEF=[];R.forEach((l,c)=>l.forEach((x,i)=>DEF.push({id:"i"+c+"_"+i,c,n:x[0],d
 let db,items=DEF,draft=[],orders=[],pres={},hrs=null,hd=null,news=null,atab="orders",first=true,unsub=null,authed=false,form={},ac=null,wl=null;
 const SL={New:"New",Accepted:"Accepted",Preparing:"Preparing",Ready:"Ready",OnTheWay:"On the way",Done:"Done",Declined:"Declined",Cancelled:"Cancelled"};
 const SHOPNAME="Davtashen 4th block 39/3";
-let CATS=C.map(c=>({n:c[0],hy:c[1],ru:c[2],ar:c[3]})),cdraft=[],shop={lat:40.222137,lon:44.503449,set:true},popQ=[],popOn=null,pmap=null,eoList=[];
+let CATS=C.map(c=>({n:c[0],hy:c[1],ru:c[2],ar:c[3]})),cdraft=[],shop={lat:40.222137,lon:44.503449,set:true},defEta=45,hf={d:"",q:""},rdc=LS.g("rdc")||{},popQ=[],popOn=null,pmap=null,eoList=[];
 const FIN=s=>s==="Done"||s==="Declined"||s==="Cancelled";
 const pinOK=p=>!!p&&p.lat!=null&&p.lon!=null&&isFinite(p.lat)&&isFinite(p.lon);
 function km(a,b){const R=6371,r=x=>x*Math.PI/180,dA=r(b.lat-a.lat),dO=r(b.lon-a.lon),h=Math.sin(dA/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dO/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
@@ -197,7 +197,7 @@ function listen(){
   first=false;orders=s.docs.map(d=>({id:d.id,...d.data()}));if(!orders.some(o=>o.status==="New"))stopAlarm();if(atab==="orders"||atab==="hist")draw();added.forEach(queuePop);
  },err=>{unsub=null;toast("Orders error: "+(err.code||err.message));});
  db.doc("menu/main").onSnapshot(s=>{if(!s.exists)return;const d=s.data();if(d.items)items=d.items;if(d.cats&&d.cats.length)CATS=d.cats;},()=>{});
- db.doc("config/shop").onSnapshot(s=>{if(s.exists&&pinOK(s.data()))shop={lat:+s.data().lat,lon:+s.data().lon,set:true};},()=>{});
+ db.doc("config/shop").onSnapshot(s=>{if(!s.exists)return;const d=s.data();if(pinOK(d)){if(shop.lat!==+d.lat||shop.lon!==+d.lon)rdc={};shop={lat:+d.lat,lon:+d.lon,set:true};}const e=parseInt(d.defEta,10);if(e>0)defEta=e;},()=>{});
  db.doc("config/presence").onSnapshot(s=>{const w=pres.open;pres=s.exists?s.data():{};if(w===pres.open)return;if(atab==="orders"||atab==="hist")draw();else{const b=document.querySelector(".top .ib");if(b){b.style.background=pres.open?"#16a34a":"#dc2626";b.textContent=pres.open?"● Online":"○ Offline";}}},()=>{});
  db.doc("config/hours").onSnapshot(s=>{hrs=s.exists?s.data():null;schedRemind();},()=>{});
  db.doc("config/news").onSnapshot(s=>{news=s.exists?s.data():null;},()=>{});
@@ -229,7 +229,7 @@ function showPop(id){
  const has=pinOK(o.pin),k=has?dist(o):null,m=document.createElement("div");
  m.className="ov show";m.id="pop";m.style.alignItems="center";m.style.padding="14px";
  m.innerHTML=`<div class="sheet" style="border-radius:22px;max-width:520px;padding:16px"><button class="x" onclick="closePop()" aria-label="Close">×</button><h2 style="font-size:20px;margin:0 0 4px">🔔 ${esc(o.no)} · ${esc(o.mode)}</h2><div class="note">${esc(o.name||"")} · ${fmt(o.total||0)}</div>
- ${has?`<div id="pmap" style="height:min(300px,38vh);border-radius:16px;margin:10px 0;background:var(--card)"></div><div style="font-size:18px;font-weight:800">📏 ${k.toFixed(1)} km <span class="note" style="font-weight:400">straight line from ${SHOPNAME}</span></div><div class="note" id="proad">Calculating road distance…</div>`:`<div class="tbox note">${o.mode==="Delivery"?"No map pin on this order — see the address below.":"No delivery for this order type."}</div>`}
+ ${has?`<div id="pmap" style="height:min(300px,38vh);border-radius:16px;margin:10px 0;background:var(--card)"></div><div style="font-size:18px" id="proad">🛣 Calculating road distance…</div><div class="note">📏 ${k.toFixed(1)} km straight line from ${SHOPNAME}</div>`:`<div class="tbox note">${o.mode==="Delivery"?"No map pin on this order — see the address below.":"No delivery for this order type."}</div>`}
  ${o.addr?`<div style="margin-top:6px">📍 ${esc(o.addr)}</div>`:""}
  <pre style="max-height:90px;overflow:auto">${esc((o.lines||[]).join("\n"))}</pre>
  <div class="st" style="margin-top:8px"><button class="pri" style="flex:2;width:auto" onclick="openFromPop()">Open order</button><button class="ghost" style="flex:1" onclick="closePop()">Close</button></div></div>`;
@@ -251,17 +251,43 @@ function drawMap(o,k){
   fit();setTimeout(fit,250);
  }catch(e){el.innerHTML='<div class="note" style="padding:16px">Map could not load. Distance: '+k.toFixed(1)+' km</div>';}
 }
+function rdKey(o){return shop.lat.toFixed(5)+","+shop.lon.toFixed(5)+">"+(+o.pin.lat).toFixed(5)+","+(+o.pin.lon).toFixed(5);}
+async function roadGet(o){
+ if(!pinOK(o.pin))return null;const k=rdKey(o);if(rdc[k])return rdc[k];
+ try{
+  const ct=new AbortController();setTimeout(()=>ct.abort(),8000);
+  const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${shop.lon},${shop.lat};${+o.pin.lon},${+o.pin.lat}?overview=false`,{signal:ct.signal});
+  const j=await r.json(),x=j.routes&&j.routes[0];if(!x)return null;
+  const v={km:x.distance/1000,min:Math.max(1,Math.round(x.duration/60))};rdc[k]=v;
+  const ks=Object.keys(rdc);if(ks.length>400)delete rdc[ks[0]];LS.s("rdc",rdc);return v;
+ }catch(e){return null;}
+}
+function distH(o){
+ const k=dist(o);if(k==null)return "";const v=rdc[rdKey(o)];
+ return `<span data-rd="${o.id}">`+(v?"🛣 <b>"+v.km.toFixed(1)+" km</b> by road · ~"+v.min+" min drive":"🛣 <span class='note'>road distance loading…</span>")+`</span><br><span class="note">📏 ${k.toFixed(1)} km straight line from ${SHOPNAME}</span>`;
+}
+function fillRoad(){
+ document.querySelectorAll("[data-rd]").forEach(async e=>{
+  if(e.dataset.done)return;const o=orders.find(x=>x.id===e.dataset.rd);if(!o)return;
+  const v=await roadGet(o);if(!e.isConnected)return;
+  if(v){e.dataset.done=1;e.innerHTML="🛣 <b>"+v.km.toFixed(1)+" km</b> by road · ~"+v.min+" min drive";}
+  else e.innerHTML="🛣 <span class='note'>road distance unavailable</span>";
+ });
+}
 async function roadDist(o){
  try{
-  const ct=new AbortController();setTimeout(()=>ct.abort(),6000);
-  const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${shop.lon},${shop.lat};${+o.pin.lon},${+o.pin.lat}?overview=false`,{signal:ct.signal});
-  const j=await r.json(),x=j.routes&&j.routes[0];if(!x)throw 0;
-  const e=$("proad");if(e)e.innerHTML="🛣 ≈ <b>"+(x.distance/1000).toFixed(1)+" km</b> by road · ~"+Math.max(1,Math.round(x.duration/60))+" min drive";
- }catch(e){const q=$("proad");if(q)q.textContent="Road distance unavailable";}
+  const v=await roadGet(o);if(!v)throw 0;
+  const e=$("proad");if(e)e.innerHTML="🛣 <b style='font-size:20px'>"+v.km.toFixed(1)+" km</b> by road · ~"+v.min+" min drive";
+ }catch(e){const q=$("proad");if(q)q.textContent="🛣 Road distance unavailable";}
 }
-function shopH(){return `<h2 style="font-size:18px">📍 Shop location</h2><p class="note">${SHOPNAME}${shop.set?"":""} Used for the distance shown on new orders.</p><div class="row" style="border:0"><input id="sl" type="number" step="any" value="${shop.lat}" placeholder="Latitude"><input id="so" type="number" step="any" value="${shop.lon}" placeholder="Longitude"></div><div class="st"><button class="ghost" style="flex:1" onclick="useHere()">📡 Use my current location</button><button class="pri" style="flex:1;width:auto" onclick="saveShop()">Save location</button></div>`;}
+function askShop(){
+ const m=document.createElement("div");m.className="ov show";m.id="mo";
+ m.innerHTML=`<div class="sheet"><button class="x" onclick="$('mo').remove()" aria-label="Close">×</button>${shopH()}</div>`;
+ document.body.appendChild(m);
+}
+function shopH(){return `<h2 style="font-size:18px">📍 Shop location &amp; GPS</h2><p class="note">${SHOPNAME} · Used for the distance shown on orders.</p><div class="row" style="border:0"><input id="sl" type="number" step="any" value="${shop.lat}" placeholder="Latitude"><input id="so" type="number" step="any" value="${shop.lon}" placeholder="Longitude"></div><div class="st"><button class="ghost" style="flex:1" onclick="useHere()">📡 Use my current location</button><button class="pri" style="flex:1;width:auto" onclick="saveShop()">Save location</button></div><h2 style="font-size:18px;margin-top:18px">⏱ Standard arrival time</h2><p class="note">Pre-filled when you accept an order. You can still change it on each order.</p><div class="row" style="border:0"><input id="sdE" type="number" inputmode="numeric" min="1" value="${defEta}" placeholder="Minutes"><span class="note" style="flex:none">minutes</span></div>`;}
 function useHere(){if(!navigator.geolocation){toast("Location not available");return;}navigator.geolocation.getCurrentPosition(p=>{$("sl").value=p.coords.latitude.toFixed(6);$("so").value=p.coords.longitude.toFixed(6);toast("Got your position — tap Save");},()=>toast("Could not get location"),{enableHighAccuracy:true,timeout:15000});}
-async function saveShop(){const la=+$("sl").value,lo=+$("so").value;if(!isFinite(la)||!isFinite(lo)||Math.abs(la)>90||Math.abs(lo)>180){toast("Invalid coordinates");return;}try{await db.doc("config/shop").set({lat:la,lon:lo,name:SHOPNAME,ts:Date.now()});toast("✓ Saved");}catch(e){toast("Could not save: "+(e.code||""));}}
+async function saveShop(){const la=+$("sl").value,lo=+$("so").value;if(!isFinite(la)||!isFinite(lo)||Math.abs(la)>90||Math.abs(lo)>180){toast("Invalid coordinates");return;}try{const de=parseInt($("sdE").value,10);if(!(de>0)){toast("Enter a valid arrival time");return;}await db.doc("config/shop").set({lat:la,lon:lo,name:SHOPNAME,defEta:de,ts:Date.now()});defEta=de;rdc={};LS.s("rdc",{});toast("✓ Saved");const m=$("mo");m&&m.remove();if(atab==="orders"||atab==="hist")draw();}catch(e){toast("Could not save: "+(e.code||""));}}
 
 /* ---- edit / cancel / message ---- */
 function actRow(o){return `<div class="st" style="margin-top:8px"><button class="ghost" style="flex:1" onclick="editOrder('${o.id}')">✏️ Edit order</button>${o.status==="New"?"":`<button class="ghost" style="flex:1;color:#dc2626" onclick="askCancel('${o.id}')">🚫 Cancel order</button>`}</div>`;}
@@ -325,9 +351,9 @@ function draw(){
  document.querySelectorAll("[data-k]").forEach(e=>{form[e.dataset.k]=e.value;});
  const y=window.scrollY,tabs=[["orders","Orders"],["hist","Past orders"],["menu","Menu"],["hours","Hours"],["news","Updates"]];
  const nNew=orders.filter(o=>o.status==="New").length;
- $("app").innerHTML=`<div class="adm" style="min-height:100vh"><div class="top" style="overflow-x:auto;position:sticky;top:0;z-index:5"><b style="flex:none">🛠 Skhtor</b><button class="ib" style="flex:none;background:${pres.open?"#16a34a":"#dc2626"}" onclick="setOpen()">${pres.open?"● Online":"○ Offline"}</button>${tabs.map(([k,l])=>`<button class="ib" style="flex:none;${atab===k?"background:var(--brand);color:var(--on)":""}" onclick="tabGo('${k}')">${l}${k==="orders"&&nNew?" ("+nNew+")":""}</button>`).join("")}<button class="ib" style="flex:none" onclick="askOut()" aria-label="Sign out">⎋</button></div><div class="body">${atab==="orders"?ordersH(0):atab==="hist"?ordersH(1):atab==="menu"?menuH():atab==="hours"?hoursH():newsH()}</div></div>`;
+ $("app").innerHTML=`<div class="adm" style="min-height:100vh"><div class="top" style="overflow-x:auto;position:sticky;top:0;z-index:5"><b style="flex:none">🛠 Skhtor</b><button class="ib" style="flex:none;background:${pres.open?"#16a34a":"#dc2626"}" onclick="setOpen()">${pres.open?"● Online":"○ Offline"}</button>${tabs.map(([k,l])=>`<button class="ib" style="flex:none;${atab===k?"background:var(--brand);color:var(--on)":""}" onclick="tabGo('${k}')">${l}${k==="orders"&&nNew?" ("+nNew+")":""}</button>`).join("")}<button class="ib" style="flex:none" onclick="askShop()" aria-label="Edit location and GPS" title="Location &amp; GPS">📍</button><button class="ib" style="flex:none" onclick="askOut()" aria-label="Sign out">⎋</button></div><div class="body">${atab==="orders"?ordersH(0):atab==="hist"?ordersH(1):atab==="menu"?menuH():atab==="hours"?hoursH():newsH()}</div></div>`;
  document.querySelectorAll("[data-k]").forEach(e=>{if(form[e.dataset.k]!==undefined)e.value=form[e.dataset.k];});
- if(atab==="orders"||atab==="hist")window.scrollTo(0,y);
+ if(atab==="orders"||atab==="hist"){window.scrollTo(0,y);fillRoad();}
 }
 function stats(){
  const d=new Date().toDateString(),T=orders.filter(o=>new Date(o.ts).toDateString()===d&&o.status!=="Declined"&&o.status!=="Cancelled");
@@ -336,14 +362,14 @@ function stats(){
 function acceptPanel(o){
  const id=o.id,dl=o.mode==="Delivery",pk=o.mode==="Pickup";
  let p=`<div class="tbox">`;
- if(dl||pk)p+=`<div class="note">${dl?"Arrives in (minutes)":"Ready in (minutes)"}</div><div class="chips">${[10,15,20,30,45,60].map(m=>`<button onclick="setEta('${id}',${m})">${m}</button>`).join("")}</div><input type="number" inputmode="numeric" data-k="eta_${id}" placeholder="minutes">`;
+ if(dl||pk)p+=`<div class="note">${dl?"Arrives in (minutes)":"Ready in (minutes)"}</div><div class="chips">${[...new Set([10,15,20,30,45,60,defEta])].sort((a,b)=>a-b).map(m=>`<button onclick="setEta('${id}',${m})">${m}</button>`).join("")}</div><input type="number" inputmode="numeric" data-k="eta_${id}" value="${defEta}" placeholder="minutes">`;
  if(!dl)p+=`<div class="note">${pk?"Pickup time (optional)":"Table time"}</div><input type="time" data-k="ct_${id}" value="${/^\d\d:\d\d$/.test(o.when||"")?o.when:""}">`;
  return p+`<input data-k="rs_${id}" placeholder="Reason if declining (optional)"><div class="st" style="margin-top:6px"><button class="pri" style="width:auto;flex:2" onclick="accept('${id}')">✅ Accept</button><button class="ghost" style="flex:1" onclick="decline('${id}')">✕ Decline</button></div></div>`;
 }
 function card(o){
  const act=!FIN(o.status),dl=o.mode==="Delivery",flow=dl?["Accepted","Preparing","Ready","OnTheWay","Done"]:["Accepted","Preparing","Ready","Done"];
  const Y=p=>p&&isFinite(p.lon)&&isFinite(p.lat)?` · <a target="_blank" rel="noopener" href="https://yandex.com/maps/?pt=${+p.lon},${+p.lat}&z=17&l=map">Yandex Maps</a>`:"";
- const digits=String(o.phone||"").replace(/\D/g,""),D=o=>{const k=dist(o);return k==null?"":"<br>📏 <b>"+k.toFixed(1)+" km</b> from "+SHOPNAME;};
+ const digits=String(o.phone||"").replace(/\D/g,""),D=o=>{const k=dist(o);return k==null?"":"<br>"+distH(o);};
  let h=`<div class="oc ${esc(o.status)}"><b>${esc(o.no)}</b> · ${esc(o.mode)} · ${new Date(o.ts).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})} <b style="float:inline-end">${fmt(o.total)}</b>
  <div class="note">${esc(SL[o.status]||o.status)}${o.etaMin?" · ETA "+o.etaMin+" min":""}${o.confirmTime?" · ⏰ "+esc(o.confirmTime):""}${o.edited?" · ✏ edited":""}${o.reason?" · "+esc(o.reason):""}</div>
  <pre>${esc((o.lines||[]).join("\n"))}</pre><div>${o.acct==="verified"?"✅ Verified account":o.acct==="phone"?"📱 Signed in with phone (not verified)":o.acct==="guest"?"👤 Guest":""}${o.acct?"<br>":""}${esc(o.name)} · <a href="tel:${esc(o.phone)}">${esc(o.phone)}</a>${digits?` · <a target="_blank" rel="noopener" href="https://wa.me/${digits}">WhatsApp</a>`:""}${o.addr?"<br>📍 "+esc(o.addr)+(o.atype?" ("+esc(o.atype)+")":"")+(o.floor?` · Floor ${esc(o.floor)}, Apt ${esc(o.apt)}`:"")+(o.code?` · 🔑 ${esc(o.code)}`:"")+Y(o.pin)+D(o):""}${o.note?"<br>📝 "+esc(o.note):""}${!dl?`<br>🕐 Customer time: <b>${esc(o.when||"ASAP")}</b>`:""}</div>`;
@@ -357,8 +383,22 @@ if(o.status==="New")h+=acceptPanel(o)+actRow(o);
  }
  return h+(act?"":msgHist(o))+`</div>`;
 }
+const dkey=t=>{const d=new Date(t);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
+function hset(k,v){hf[k]=v;draw();}
+function histBar(){
+ return `<div class="tbox"><div class="row" style="border:0;gap:6px"><input type="date" value="${esc(hf.d)}" max="${dkey(Date.now())}" onchange="hset('d',this.value)" aria-label="Date" style="flex:1"><input id="hq" type="search" inputmode="search" value="${esc(hf.q)}" placeholder="Order number or name" onchange="hset('q',this.value)" onkeydown="if(event.key==='Enter')hset('q',this.value)" style="flex:1"></div><div class="chips"><button onclick="hset('d',dkey(Date.now()))">Today</button><button onclick="hset('d',dkey(Date.now()-864e5))">Yesterday</button>${hf.d||hf.q?`<button onclick="hf={d:'',q:''};draw()">✕ Clear</button>`:""}</div></div>`;
+}
 function ordersH(h){
- const L=orders.filter(o=>h?FIN(o.status):!FIN(o.status));
+ let L=orders.filter(o=>h?FIN(o.status):!FIN(o.status));
+ if(h){
+  const q=hf.q.trim().toLowerCase().replace(/^#/,"");
+  if(hf.d)L=L.filter(o=>dkey(o.ts)===hf.d);
+  if(q)L=L.filter(o=>String(o.no||"").toLowerCase().replace(/^#/,"").includes(q)||String(o.name||"").toLowerCase().includes(q)||String(o.phone||"").includes(q));
+  L=L.slice().sort((a,b)=>b.ts-a.ts);
+  let last="",out="";
+  L.forEach(o=>{const k=dkey(o.ts);if(k!==last){last=k;const n=L.filter(x=>dkey(x.ts)===k);out+=`<h3 style="margin:16px 2px 6px;font-size:15px">📅 ${new Date(o.ts).toLocaleDateString([],{weekday:"short",day:"numeric",month:"long",year:"numeric"})} <span class="note">· ${n.length} order${n.length===1?"":"s"} · ${fmt(n.filter(x=>x.status==="Done").reduce((a,x)=>a+(x.total||0),0))}</span></h3>`;}out+=card(o);});
+  return histBar()+(out||`<p class="note">${hf.d||hf.q?"No past orders match.":"No past orders yet."}</p>`);
+ }
  return (h?"":stats()+battH())+(pres.open||h?"":`<p class="note">⚠ You are Offline — customers cannot order. Tap the red button above.</p>`)+(L.length?L.map(card).join(""):`<p class="note">${h?"No past orders yet.":"No active orders. New orders appear here live."}</p>`);
 }
 function menuH(){
@@ -372,7 +412,7 @@ function upImg(k,f){if(!f)return;const r=new FileReader();r.onload=()=>{const im
 async function saveMenu(){if(cdraft.some(c=>!String(c.n).trim())){toast("Every section needs a name");return;}try{await db.doc("menu/main").set({items:draft,cats:cdraft.map(c=>({n:c.n.trim(),hy:c.hy||"",ru:c.ru||"",ar:c.ar||""}))});toast("✓ Saved");}catch(e){toast("Could not save: "+(e.code||""));}}
 function hoursH(){
  const D=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
- return `<label class="row"><input type="checkbox" style="width:auto" ${hd.enabled?"checked":""} onchange="hd.enabled=this.checked"><span class="n">Use working hours (off = open whenever you are online)</span></label>`+hd.days.map((x,k)=>`<div class="row"><input type="checkbox" style="width:auto" ${x.on?"checked":""} onchange="hd.days[${k}].on=this.checked"><span class="n">${D[k]}</span><input type="time" style="width:auto" value="${esc(x.o)}" onchange="hd.days[${k}].o=this.value"><input type="time" style="width:auto" value="${esc(x.c)}" onchange="hd.days[${k}].c=this.value"></div>`).join("")+`<p class="note">Customers can only order while you are Online and inside these hours.</p><button class="pri" onclick="saveHours()">Save &amp; update users</button>`+shopH();
+ return `<label class="row"><input type="checkbox" style="width:auto" ${hd.enabled?"checked":""} onchange="hd.enabled=this.checked"><span class="n">Use working hours (off = open whenever you are online)</span></label>`+hd.days.map((x,k)=>`<div class="row"><input type="checkbox" style="width:auto" ${x.on?"checked":""} onchange="hd.days[${k}].on=this.checked"><span class="n">${D[k]}</span><input type="time" style="width:auto" value="${esc(x.o)}" onchange="hd.days[${k}].o=this.value"><input type="time" style="width:auto" value="${esc(x.c)}" onchange="hd.days[${k}].c=this.value"></div>`).join("")+`<p class="note">Customers can only order while you are Online and inside these hours.</p><button class="pri" onclick="saveHours()">Save &amp; update users</button>`+"";
 }
 async function saveHours(){try{await db.doc("config/hours").set(hd);toast("✓ Saved");}catch(e){toast("Could not save: "+(e.code||""));}}
 function newsH(){return `<p class="note">Message shown to all customers at the top of the menu. Leave empty to remove.</p><textarea id="nw" rows="3">${esc((news&&news.text)||"")}</textarea><button class="pri" onclick="saveNews()">Publish update</button>`;}
