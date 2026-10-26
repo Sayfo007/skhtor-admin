@@ -98,7 +98,7 @@ let DEF=[];R.forEach((l,c)=>l.forEach((x,i)=>DEF.push({id:"i"+c+"_"+i,c,n:x[0],d
 let db,items=DEF,draft=[],orders=[],pres={},hrs=null,hd=null,news=null,atab="orders",first=true,unsub=null,authed=false,form={},ac=null,wl=null;
 const SL={New:"New",Accepted:"Accepted",Preparing:"Preparing",Ready:"Ready",OnTheWay:"On the way",Done:"Done",Declined:"Declined",Cancelled:"Cancelled"};
 const SHOPNAME="Davtashen 4th block 39/3";
-let CATS=C.map(c=>({n:c[0],hy:c[1],ru:c[2],ar:c[3]})),cdraft=[],shop={lat:40.21583,lon:44.48111,set:false},popQ=[],popOn=null,pmap=null,eoList=[];
+let CATS=C.map(c=>({n:c[0],hy:c[1],ru:c[2],ar:c[3]})),cdraft=[],shop={lat:40.222137,lon:44.503449,set:true},popQ=[],popOn=null,pmap=null,eoList=[];
 const FIN=s=>s==="Done"||s==="Declined"||s==="Cancelled";
 const pinOK=p=>!!p&&p.lat!=null&&p.lon!=null&&isFinite(p.lat)&&isFinite(p.lon);
 function km(a,b){const R=6371,r=x=>x*Math.PI/180,dA=r(b.lat-a.lat),dO=r(b.lon-a.lon),h=Math.sin(dA/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dO/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
@@ -259,7 +259,7 @@ async function roadDist(o){
   const e=$("proad");if(e)e.innerHTML="🛣 ≈ <b>"+(x.distance/1000).toFixed(1)+" km</b> by road · ~"+Math.max(1,Math.round(x.duration/60))+" min drive";
  }catch(e){const q=$("proad");if(q)q.textContent="Road distance unavailable";}
 }
-function shopH(){return `<h2 style="font-size:18px">📍 Shop location</h2><p class="note">${SHOPNAME}${shop.set?"":" — currently using approximate coordinates. Stand in the shop and tap “Use my current location”, then Save."} Used for the distance shown on new orders.</p><div class="row" style="border:0"><input id="sl" type="number" step="any" value="${shop.lat}" placeholder="Latitude"><input id="so" type="number" step="any" value="${shop.lon}" placeholder="Longitude"></div><div class="st"><button class="ghost" style="flex:1" onclick="useHere()">📡 Use my current location</button><button class="pri" style="flex:1;width:auto" onclick="saveShop()">Save location</button></div>`;}
+function shopH(){return `<h2 style="font-size:18px">📍 Shop location</h2><p class="note">${SHOPNAME}${shop.set?"":""} Used for the distance shown on new orders.</p><div class="row" style="border:0"><input id="sl" type="number" step="any" value="${shop.lat}" placeholder="Latitude"><input id="so" type="number" step="any" value="${shop.lon}" placeholder="Longitude"></div><div class="st"><button class="ghost" style="flex:1" onclick="useHere()">📡 Use my current location</button><button class="pri" style="flex:1;width:auto" onclick="saveShop()">Save location</button></div>`;}
 function useHere(){if(!navigator.geolocation){toast("Location not available");return;}navigator.geolocation.getCurrentPosition(p=>{$("sl").value=p.coords.latitude.toFixed(6);$("so").value=p.coords.longitude.toFixed(6);toast("Got your position — tap Save");},()=>toast("Could not get location"),{enableHighAccuracy:true,timeout:15000});}
 async function saveShop(){const la=+$("sl").value,lo=+$("so").value;if(!isFinite(la)||!isFinite(lo)||Math.abs(la)>90||Math.abs(lo)>180){toast("Invalid coordinates");return;}try{await db.doc("config/shop").set({lat:la,lon:lo,name:SHOPNAME,ts:Date.now()});toast("✓ Saved");}catch(e){toast("Could not save: "+(e.code||""));}}
 
