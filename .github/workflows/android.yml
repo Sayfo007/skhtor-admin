@@ -37,6 +37,7 @@ jobs:
           DIR=android/app/src/main/java/$(echo "$PKG" | tr . /)
           mkdir -p "$DIR" android/app/src/main/res/raw
           cp native/order_alert.wav android/app/src/main/res/raw/
+          cp www/sounds/snd_*.wav android/app/src/main/res/raw/   # extra alarm sounds
           sed "s/^package .*/package $PKG;/" native/KeepAlivePlugin.java > "$DIR/KeepAlivePlugin.java"
           sed "s/^package .*/package $PKG;/" native/KeepAliveService.java > "$DIR/KeepAliveService.java"
           cat > "$DIR/MainActivity.java" <<JAVA
