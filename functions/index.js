@@ -10,22 +10,31 @@ setGlobalOptions({region: REGION, maxInstances: 5});
 const money = (n) => Number(n || 0).toLocaleString("en-US") + " AMD";
 
 // 1) New order -> push to every signed-in admin phone
+const ADMIN_SOUNDS = ["snd_bell", "snd_chime", "snd_doorbell", "snd_digital", "snd_siren", "snd_phone", "snd_marimba", "snd_pulse", "snd_bubble", "snd_fanfare"];
+
 exports.notifyAdminNewOrder = onDocumentCreated("orders/{id}", async (event) => {
   const o = event.data.data();
   const snap = await admin.firestore().collection("adminTokens").get();
-  const tokens = snap.docs.map((d) => d.id);
-  if (!tokens.length) return;
-  const res = await admin.messaging().sendEachForMulticast({
-    tokens,
-    notification: {title: `New order ${o.no}`, body: `${o.mode} · ${o.name} · ${money(o.total)}`},
-    android: {priority: "high", ttl: 60000, notification: {channelId: "orders_alarm", sound: "order_alert", visibility: "public", notificationPriority: "PRIORITY_MAX", defaultVibrateTimings: false, vibrateTimingsMillis: [0, 800, 300, 800, 300, 800]}},
-    data: {orderId: event.params.id},
+  if (snap.empty) return;
+  // group the devices by the alarm sound each admin picked
+  const groups = {};
+  snap.docs.forEach((d) => {
+    const s = ADMIN_SOUNDS.includes(d.data().snd) ? d.data().snd : "order_alert";
+    (groups[s] = groups[s] || []).push(d.id);
   });
   const dead = [];
-  res.responses.forEach((r, i) => {
-    const c = r.error && r.error.code;
-    if (!r.success && (c === "messaging/registration-token-not-registered" || c === "messaging/invalid-registration-token")) dead.push(tokens[i]);
-  });
+  await Promise.all(Object.entries(groups).map(async ([snd, tokens]) => {
+    const res = await admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: {title: `New order ${o.no}`, body: `${o.mode} · ${o.name} · ${money(o.total)}`},
+      android: {priority: "high", ttl: 60000, notification: {channelId: snd === "order_alert" ? "orders_alarm" : "orders_alarm_" + snd, sound: snd, visibility: "public", notificationPriority: "PRIORITY_MAX", defaultVibrateTimings: false, vibrateTimingsMillis: [0, 800, 300, 800, 300, 800]}},
+      data: {orderId: event.params.id},
+    });
+    res.responses.forEach((r, i) => {
+      const c = r.error && r.error.code;
+      if (!r.success && (c === "messaging/registration-token-not-registered" || c === "messaging/invalid-registration-token")) dead.push(tokens[i]);
+    });
+  }));
   await Promise.all(dead.map((t) => admin.firestore().doc("adminTokens/" + t).delete()));
 });
 
