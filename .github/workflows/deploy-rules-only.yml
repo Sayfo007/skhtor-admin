@@ -1,0 +1,30 @@
+name: Deploy Firebase backend
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["firestore.rules", "firebase.json"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check files
+        run: |
+          for f in firebase.json firestore.rules; do
+            [ -f "$f" ] || { echo "::error::Missing $f in the repo root"; exit 1; }
+          done
+      - name: Deploy
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then echo "::error::Secret FIREBASE_SERVICE_ACCOUNT is empty or missing"; exit 1; fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          node -e "const j=require(process.env.RUNNER_TEMP+'/sa.json'); if(!j.private_key||!j.client_email) throw new Error('not a service-account key'); console.log('Using', j.client_email, 'project', j.project_id)" \
+            || { echo "::error::FIREBASE_SERVICE_ACCOUNT must be the full contents of the service-account .json key file"; exit 1; }
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx -y firebase-tools@13 deploy --only firestore:rules --project skhtor-904cc --non-interactive --debug
