@@ -102,6 +102,7 @@ let CATS=C.map(c=>({n:c[0],hy:c[1],ru:c[2],ar:c[3]})),cdraft=[],shop={lat:40.222
 const FIN=s=>s==="Done"||s==="Declined"||s==="Cancelled";
 const pinOK=p=>!!p&&p.lat!=null&&p.lon!=null&&isFinite(p.lat)&&isFinite(p.lon);
 function km(a,b){const R=6371,r=x=>x*Math.PI/180,dA=r(b.lat-a.lat),dO=r(b.lon-a.lon),h=Math.sin(dA/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dO/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
+const recH=o=>o.mode==="Delivery"&&o.deliv!=null?`<div class="tbox" style="margin:6px 0">🧾 Items <b>${fmt((+o.total||0)-(+o.deliv||0))}</b> + 🚚 Delivery${o.km!=null?" ("+o.km+" km)":""} <b>${fmt(o.deliv)}</b><br>= Total <b>${fmt(o.total)}</b></div>`:"";
 const dist=o=>pinOK(o.pin)?km(shop,{lat:+o.pin.lat,lon:+o.pin.lon}):null;
 const QM={
  en:["We're running a few minutes late — sorry!","Our courier is outside, please come out.","Please call us when you can.","Your order is ready — thank you!"],
@@ -231,7 +232,7 @@ function showPop(id){
  m.innerHTML=`<div class="sheet" style="border-radius:22px;max-width:520px;padding:16px"><button class="x" onclick="closePop()" aria-label="Close">×</button><h2 style="font-size:20px;margin:0 0 4px">🔔 ${esc(o.no)} · ${esc(o.mode)}</h2><div class="note">${esc(o.name||"")} · ${fmt(o.total||0)}</div>
  ${has?`<div id="pmap" style="height:min(300px,38vh);border-radius:16px;margin:10px 0;background:var(--card)"></div><div style="font-size:18px" id="proad">🛣 Calculating road distance…</div><div class="note">📏 ${k.toFixed(1)} km straight line from ${SHOPNAME}</div>`:`<div class="tbox note">${o.mode==="Delivery"?"No map pin on this order — see the address below.":"No delivery for this order type."}</div>`}
  ${o.addr?`<div style="margin-top:6px">📍 ${esc(o.addr)}</div>`:""}
- <pre style="max-height:90px;overflow:auto">${esc((o.lines||[]).join("\n"))}</pre>
+ <pre style="max-height:90px;overflow:auto">${esc((o.lines||[]).join("\n"))}</pre>${recH(o)}
  <div class="st" style="margin-top:8px"><button class="pri" style="flex:2;width:auto" onclick="openFromPop()">Open order</button><button class="ghost" style="flex:1" onclick="closePop()">Close</button></div></div>`;
  document.body.appendChild(m);
  if(has){setTimeout(()=>drawMap(o,k),60);roadDist(o);}
@@ -382,7 +383,7 @@ function card(o){
  const digits=String(o.phone||"").replace(/\D/g,""),D=o=>{const k=dist(o);return k==null?"":"<br>"+distH(o);};
  let h=`<div class="oc ${esc(o.status)}"><b>${esc(o.no)}</b> · ${esc(o.mode)} · ${new Date(o.ts).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})} <b style="float:inline-end">${fmt(o.total)}</b>
  <div class="note">${esc(SL[o.status]||o.status)}${o.etaMin?" · ETA "+o.etaMin+" min":""}${o.confirmTime?" · ⏰ "+esc(o.confirmTime):""}${o.edited?" · ✏ edited":""}${o.reason?" · "+esc(o.reason):""}</div>
- <pre>${esc((o.lines||[]).join("\n"))}</pre><div>${o.acct==="verified"?"✅ Verified account":o.acct==="phone"?"📱 Signed in with phone (not verified)":o.acct==="guest"?"👤 Guest":""}${o.acct?"<br>":""}${esc(o.name)} · <a href="tel:${esc(o.phone)}">${esc(o.phone)}</a>${digits?` · <a target="_blank" rel="noopener" href="https://wa.me/${digits}">WhatsApp</a>`:""}${o.addr?"<br>📍 "+esc(o.addr)+(o.atype?" ("+esc(o.atype)+")":"")+(o.floor?` · Floor ${esc(o.floor)}, Apt ${esc(o.apt)}`:"")+(o.code?` · 🔑 ${esc(o.code)}`:"")+Y(o.pin)+D(o):""}${o.note?"<br>📝 "+esc(o.note):""}${!dl?`<br>🕐 Customer time: <b>${esc(o.when||"ASAP")}</b>`:""}</div>`;
+ <pre>${esc((o.lines||[]).join("\n"))}</pre>${recH(o)}<div>${o.acct==="verified"?"✅ Verified account":o.acct==="phone"?"📱 Signed in with phone (not verified)":o.acct==="guest"?"👤 Guest":""}${o.acct?"<br>":""}${esc(o.name)} · <a href="tel:${esc(o.phone)}">${esc(o.phone)}</a>${digits?` · <a target="_blank" rel="noopener" href="https://wa.me/${digits}">WhatsApp</a>`:""}${o.addr?"<br>📍 "+esc(o.addr)+(o.atype?" ("+esc(o.atype)+")":"")+(o.floor?` · Floor ${esc(o.floor)}, Apt ${esc(o.apt)}`:"")+(o.code?` · 🔑 ${esc(o.code)}`:"")+Y(o.pin)+D(o):""}${o.note?"<br>📝 "+esc(o.note):""}${!dl?`<br>🕐 Customer time: <b>${esc(o.when||"ASAP")}</b>`:""}</div>`;
  if(dl&&o.pin&&isFinite(o.pin.lat)&&isFinite(o.pin.lon))h+=`<button class="ghost" style="margin-top:8px;width:100%" onclick="sharePin('${o.id}')">📤 Share location pin</button>`;
  if(pinOK(o.pin))h+=`<button class="ghost" style="margin-top:8px;width:100%" onclick="showPop('${o.id}')">🗺 Map &amp; distance</button>`;
 if(o.status==="New")h+=acceptPanel(o)+actRow(o);
