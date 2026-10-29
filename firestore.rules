@@ -12,7 +12,7 @@ service cloud.firestore {
       allow list, update, delete: if isAdmin();
       allow create: if get(/databases/$(database)/documents/config/presence).data.open == true
         && request.resource.data.status == "New"
-        && request.resource.data.keys().hasOnly(['no','mode','name','phone','addr','pin','floor','apt','code','atype','when','note','lines','total','status','ts','uid','fcm','lang'])
+        && request.resource.data.keys().hasOnly(['no','mode','name','phone','addr','pin','floor','apt','code','atype','when','note','lines','total','status','ts','uid','fcm','lang','acct','sub','deliv','km'])
         && request.resource.data.lines.size() <= 80;
     }
   }
