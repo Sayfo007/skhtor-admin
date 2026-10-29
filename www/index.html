@@ -126,7 +126,7 @@ async function initPush(){
  if(!p){if(first)reqNotif();return;}
  try{
   if(!pushWired){pushWired=true;
-   p.addListener("registration",tk=>{LS.s("ad_tok",tk.value);db.doc("adminTokens/"+tk.value).set({ts:Date.now()}).catch(()=>{});});
+   p.addListener("registration",tk=>{LS.s("ad_tok",tk.value);db.doc("adminTokens/"+tk.value).set({ts:Date.now(),snd:getSnd()},{merge:true}).catch(()=>{});});
    p.addListener("registrationError",()=>toast("Push registration failed"));
    p.addListener("pushNotificationReceived",()=>{alarm();});
    try{await p.createChannel({id:"orders",name:"New orders",description:"New order alerts",importance:5,visibility:1,vibration:true});}catch(e){}
@@ -140,14 +140,46 @@ async function keepAwake(){try{if("wakeLock" in navigator)wl=await navigator.wak
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&authed){keepAwake();beat();chkBatt();}});
 setInterval(()=>{if(!authed)return;orders.some(o=>o.status==="New")?alarm():stopAlarm();},12000);setInterval(beat,30000);
 
+/* ---- notification sound picker ---- */
+const SND=[["order_alert","🚨 Default alarm"],["snd_bell","🔔 Classic bell"],["snd_chime","🎐 Soft chime"],["snd_doorbell","🚪 Doorbell"],["snd_digital","📟 Digital beeps"],["snd_siren","🚓 Siren"],["snd_phone","☎️ Old phone"],["snd_marimba","🎵 Marimba"],["snd_pulse","📡 Sonar pulse"],["snd_bubble","🫧 Bubble pops"],["snd_fanfare","🎺 Fanfare"]];
+const sndFile=id=>"sounds/"+id+".wav";
+const getSnd=()=>{const v=LS.g("ad_snd");return SND.some(x=>x[0]===v)?v:"order_alert";};
+let pvA=null,pvId=null;
+function pvStop(){try{if(pvA){pvA.pause();pvA.currentTime=0;}}catch(e){}pvId=null;}
+function pvPlay(id){
+ if(pvId===id){pvStop();markSnd();return;}
+ pvStop();
+ try{pvA=pvA||new Audio();pvA.onended=()=>{pvId=null;markSnd();};pvA.src=sndFile(id);pvA.currentTime=0;pvId=id;const p=pvA.play();if(p&&p.catch)p.catch(()=>{pvId=null;markSnd();});}catch(e){pvId=null;}
+ markSnd();
+}
+function markSnd(){
+ const cur=getSnd();
+ document.querySelectorAll("[data-s]").forEach(r=>{const id=r.dataset.s,on=id===cur;r.style.borderColor=on?"var(--brand)":"transparent";const c=r.querySelector(".sc");if(c)c.textContent=on?"✓":"";const p=r.querySelector(".sp");if(p)p.textContent=pvId===id?"■":"▶";});
+}
+async function applySnd(){
+ const id=getSnd(),k=KA();
+ if(k){try{await k.createChannel({sound:id});}catch(e){}}
+ const tk=LS.g("ad_tok");if(tk&&db)db.doc("adminTokens/"+tk).set({snd:id},{merge:true}).catch(()=>{});
+}
+function pickSnd(id){LS.s("ad_snd",id);markSnd();pvPlay(id);applySnd();}
+function closeSnd(){pvStop();const m=$("ms");m&&m.remove();}
+function showSnd(){
+ closeSnd();
+ const m=document.createElement("div");m.className="ov show";m.id="ms";
+ m.onclick=e=>{if(e.target===m)closeSnd();};
+ m.innerHTML=`<div class="sheet"><button class="x" onclick="closeSnd()" aria-label="Close">×</button><h2>🔔 Notification sound</h2><p class="note">Tap ▶ to listen. Tap a row to use that sound for new orders.</p>`+
+  SND.map(([id,n])=>`<div data-s="${id}" onclick="pickSnd('${id}')" style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;margin:6px 0;background:var(--card);border:2px solid transparent;cursor:pointer"><button class="ghost sp" style="flex:none;width:44px;height:44px;padding:0" onclick="event.stopPropagation();pvPlay('${id}')" aria-label="Play">▶</button><span style="flex:1;font-weight:600">${n}</span><b class="sc" style="color:var(--brand);font-size:20px;min-width:22px;text-align:center"></b></div>`).join("")+
+  `<button class="ghost" style="width:100%;margin-top:10px" onclick="closeSnd()">Close</button></div>`;
+ document.body.appendChild(m);markSnd();
+}
 /* ---- keep-alive, alarm, reminders, share ---- */
 const KA=()=>window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.KeepAlive;
 let batt=true;
-function alarm(){const k=KA();if(k)k.ring().catch(beep);else beep();}
+function alarm(){const k=KA();if(k)k.ring({sound:getSnd()}).catch(beep);else beep();}
 function stopAlarm(){const k=KA();if(k)k.stopRing().catch(()=>{});}
 function beat(){if(authed&&pres.open)db.doc("config/presence").set({hb:Date.now()},{merge:true}).catch(()=>{});}
 async function chkBatt(){const k=KA();if(!k||!authed)return;try{const r=await k.batteryStatus();if(r.ignoring!==batt){batt=r.ignoring;if(atab==="orders")draw();}}catch(e){}}
-async function initKA(){const k=KA();if(!k)return;try{await k.createChannel();await k.start();await chkBatt();if(!batt&&!LS.g("ad_bq")){LS.s("ad_bq",1);k.requestBattery();}}catch(e){}}
+async function initKA(){const k=KA();if(!k)return;try{await k.createChannel({sound:getSnd()});await k.start();await chkBatt();if(!batt&&!LS.g("ad_bq")){LS.s("ad_bq",1);k.requestBattery();}}catch(e){}}
 function battH(){return KA()&&!batt?`<div class="tbox" style="border:2px solid #dc2626"><b>⚠ Battery optimization is ON</b><div class="note">Android may close this app and you will miss orders.</div><button class="pri" style="margin-top:8px" onclick="KA().requestBattery()">Disable it now</button></div>`:"";}
 async function schedRemind(){
  const p=LNP();if(!p)return;
@@ -262,9 +294,18 @@ function drawMap(o,k){
   const pm=(p,e)=>new ymaps.Placemark(p,{},{iconLayout:"default#image",iconImageHref:ymIco(e),iconImageSize:[40,40],iconImageOffset:[-20,-36]});
   m.geoObjects.add(pm(s,"🏠"));m.geoObjects.add(pm(c,"📍"));
   const fit=()=>{try{m.container.fitToViewport();m.setBounds([[Math.min(s[0],c[0]),Math.min(s[1],c[1])],[Math.max(s[0],c[0]),Math.max(s[1],c[1])]],{checkZoomRange:true,zoomMargin:40}).then(()=>{if(m.getZoom()>16)m.setZoom(16);});}catch(e){}};
-  fit();setTimeout(fit,250);
+  fit();[250,600,1200].forEach(d=>setTimeout(fit,d));
+  try{m.container.events.add("sizechange",fit);}catch(e){}
   pmap={remove:()=>{try{m.destroy();}catch(e){}}};
- }).catch(()=>drawMapLeaflet(o,k));
+ }).catch(err=>{
+  const why=(err&&err.message)?err.message:(err?String(err):"could not load Yandex Maps");
+  try{if(pmap){pmap.remove();pmap=null;}}catch(e){}
+  const el3=$("pmap");if(!el3||el3!==el)return;
+  el3.innerHTML="";el3.className="";
+  drawMapLeaflet(o,k);
+  const n=document.createElement("div");n.className="note";n.style.cssText="margin:-4px 0 8px";n.textContent="⚠️ Yandex map unavailable ("+why+") — showing OpenStreetMap";
+  if(el3.parentNode)el3.parentNode.insertBefore(n,el3.nextSibling);
+ });
 }
 function drawMapLeaflet(o,k){
  const el=$("pmap");if(!el)return;
@@ -391,7 +432,7 @@ function draw(){
  document.querySelectorAll("[data-k]").forEach(e=>{form[e.dataset.k]=e.value;});
  const y=window.scrollY,tabs=[["orders","Orders"],["hist","Past orders"],["menu","Menu"],["hours","Hours"],["news","Updates"]];
  const nNew=orders.filter(o=>o.status==="New").length;
- $("app").innerHTML=`<div class="adm" style="min-height:100vh"><div class="top" style="overflow-x:auto;position:sticky;top:0;z-index:5"><b style="flex:none">🛠 Skhtor</b><button class="ib" style="flex:none;background:${pres.open?"#16a34a":"#dc2626"}" onclick="setOpen()">${pres.open?"● Online":"○ Offline"}</button>${tabs.map(([k,l])=>`<button class="ib" style="flex:none;${atab===k?"background:var(--brand);color:var(--on)":""}" onclick="tabGo('${k}')">${l}${k==="orders"&&nNew?" ("+nNew+")":""}</button>`).join("")}<button class="ib" style="flex:none" onclick="askShop()" aria-label="Edit location and GPS" title="Location &amp; GPS">📍</button><button class="ib" style="flex:none" onclick="askOut()" aria-label="Sign out">⎋</button></div><div class="body">${atab==="orders"?ordersH(0):atab==="hist"?ordersH(1):atab==="menu"?menuH():atab==="hours"?hoursH():newsH()}</div></div>`;
+ $("app").innerHTML=`<div class="adm" style="min-height:100vh"><div class="top" style="overflow-x:auto;position:sticky;top:0;z-index:5"><b style="flex:none">🛠 Skhtor</b><button class="ib" style="flex:none;background:${pres.open?"#16a34a":"#dc2626"}" onclick="setOpen()">${pres.open?"● Online":"○ Offline"}</button>${tabs.map(([k,l])=>`<button class="ib" style="flex:none;${atab===k?"background:var(--brand);color:var(--on)":""}" onclick="tabGo('${k}')">${l}${k==="orders"&&nNew?" ("+nNew+")":""}</button>`).join("")}<button class="ib" style="flex:none" onclick="askShop()" aria-label="Edit location and GPS" title="Location &amp; GPS">📍</button><button class="ib" style="flex:none" onclick="showSnd()" aria-label="Notification sound" title="Notification sound">🔔</button><button class="ib" style="flex:none" onclick="askOut()" aria-label="Sign out">⎋</button></div><div class="body">${atab==="orders"?ordersH(0):atab==="hist"?ordersH(1):atab==="menu"?menuH():atab==="hours"?hoursH():newsH()}</div></div>`;
  document.querySelectorAll("[data-k]").forEach(e=>{if(form[e.dataset.k]!==undefined)e.value=form[e.dataset.k];});
  if(atab==="orders"||atab==="hist"){window.scrollTo(0,y);fillRoad();}
 }
